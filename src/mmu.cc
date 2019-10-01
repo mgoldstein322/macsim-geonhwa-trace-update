@@ -131,6 +131,9 @@ void MMU::initialize(macsim_c *simBase)
   m_batch_processing_overhead = m_simBase->m_knobs->KNOB_BATCH_PROCESSING_OVERHEAD->getValue();
 
   m_fault_buffer_size = m_simBase->m_knobs->KNOB_FAULT_BUFFER_SIZE->getValue();
+
+  // prefetch
+  m_enable_prefetch = *KNOB(KNOB_ENABLE_PREFETCH);
 }
 
 void MMU::finalize()
@@ -517,6 +520,12 @@ bool MMU::do_batch_processing()
 void MMU::begin_batch_processing()
 {
   assert(m_batch_processing == false);
+
+  // prefetch
+  if (m_enable_prefetch) {
+    // 1. analyze page faults (entries in m_fault_buffer_processing)
+    // 2. select prefetch pages and insert them into m_fault_buffer_processing
+  }
   
   std::move(m_fault_buffer.begin(), m_fault_buffer.end(), std::back_inserter(m_fault_buffer_processing));
   m_fault_buffer_processing.sort();

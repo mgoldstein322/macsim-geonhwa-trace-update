@@ -186,6 +186,10 @@ private:
   Counter m_batch_processing_next_event_cycle;
 
   unordered_set<Addr> m_unique_pages;
+
+// prefetch
+private:
+  bool m_enable_prefetch;
 };
 
 #endif //MMU_H_INCLUDED

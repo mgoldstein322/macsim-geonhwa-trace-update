@@ -1,0 +1,64 @@
+diff --git a/def/memory.param.def b/def/memory.param.def
+index f72fcd8..616121b 100644
+--- a/def/memory.param.def
++++ b/def/memory.param.def
+@@ -250,3 +250,4 @@ param<PAGE_EVICTION_LATENCY, page_eviction_latency, long, 1000>
+ param<BATCH_PROCESSING_OVERHEAD, batch_processing_overhead, long, 50000>
+ 
+ param<FAULT_BUFFER_SIZE, fault_buffer_size, long, 512>
++param<ENABLE_PREFETCH, enable_prefetch, bool, false>
+diff --git a/internal b/internal
+--- a/internal
++++ b/internal
+@@ -1 +1 @@
+-Subproject commit a9ddb94e04461cd816cd78798074d4c45e0bfb1e
++Subproject commit a9ddb94e04461cd816cd78798074d4c45e0bfb1e-dirty
+diff --git a/src/mmu.cc b/src/mmu.cc
+index cf61ca2..6a2044e 100644
+--- a/src/mmu.cc
++++ b/src/mmu.cc
+@@ -131,6 +131,9 @@ void MMU::initialize(macsim_c *simBase)
+   m_batch_processing_overhead = m_simBase->m_knobs->KNOB_BATCH_PROCESSING_OVERHEAD->getValue();
+ 
+   m_fault_buffer_size = m_simBase->m_knobs->KNOB_FAULT_BUFFER_SIZE->getValue();
++
++  // prefetch
++  m_enable_prefetch = *KNOB(KNOB_ENABLE_PREFETCH);
+ }
+ 
+ void MMU::finalize()
+@@ -517,6 +520,12 @@ bool MMU::do_batch_processing()
+ void MMU::begin_batch_processing()
+ {
+   assert(m_batch_processing == false);
++
++  // prefetch
++  if (m_enable_prefetch) {
++    // 1. analyze page faults (entries in m_fault_buffer_processing)
++    // 2. select prefetch pages and insert them into m_fault_buffer_processing
++  }
+   
+   std::move(m_fault_buffer.begin(), m_fault_buffer.end(), std::back_inserter(m_fault_buffer_processing));
+   m_fault_buffer_processing.sort();
+@@ -534,4 +543,4 @@ void MMU::begin_batch_processing()
+   
+   DEBUG("batch processing begins at %llu fault buffer size %zu\n",
+         m_cycle, m_fault_buffer_processing.size());
+-}
+\ No newline at end of file
++}
+diff --git a/src/mmu.h b/src/mmu.h
+index 71ddddf..a775028 100644
+--- a/src/mmu.h
++++ b/src/mmu.h
+@@ -186,6 +186,10 @@ private:
+   Counter m_batch_processing_next_event_cycle;
+ 
+   unordered_set<Addr> m_unique_pages;
++
++// prefetch
++private:
++  bool m_enable_prefetch;
+ };
+ 
+ #endif //MMU_H_INCLUDED
