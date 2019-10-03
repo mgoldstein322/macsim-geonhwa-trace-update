@@ -517,18 +517,86 @@ bool MMU::do_batch_processing()
   return true;
 }
 
+bool MMU::is_loaded(Addr page_number){
+  Addr addr = (page_number << m_offset_bits);
+
+  // Check TLB
+  if(m_TLB->lookup(addr))
+    return true;
+
+  // Check Page Table
+  Addr page_offset = get_page_offset(addr);
+
+  auto it = m_page_table.find(page_number);
+  if (it != m_page_table.end()) { // page table hit
+    return true;
+  } else { // page fault
+    return false;
+  } 
+
+  return false;
+}
+
+
 void MMU::begin_batch_processing()
 {
   assert(m_batch_processing == false);
-
   // prefetch
   if (m_enable_prefetch) {
     // 1. analyze page faults (entries in m_fault_buffer_processing)
+    // what about prefetch overhead?
+    int agressiveness = 10;
+    list<Addr> fault_buffer_prefetch;
+    std::move(m_fault_buffer.begin(), m_fault_buffer.end(), std::back_inserter(m_fault_buffer_processing));
+    m_fault_buffer_processing.sort();
+    
+    Addr last_page_num = 0;
+    for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
+    {
+      Addr cur_page_num = *(it);
+      fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
+      fprintf(m_simBase->g_mystdout, "last page num %llu\n", last_page_num);
+      for(uns64 i =1; i < agressiveness; i++){
+        if(last_page_num == 0)
+          break;
+        if(last_page_num + i < cur_page_num){
+          if(!is_loaded(last_page_num+i)){
+            fault_buffer_prefetch.push_back(last_page_num+i);
+            m_fault_uops.emplace(last_page_num+i, list<uop_c *>());
+          }
+        }
+        else
+          break;
+      }      
+      fprintf(m_simBase->g_mystdout, "%llu\n", *it);
+      last_page_num = cur_page_num;
+    }
+
+    // Add after last page number
+    for(uns64 i =1; i < agressiveness; i++){
+      if(last_page_num == 0)
+        break;
+      if(!is_loaded(last_page_num+i)){
+        fault_buffer_prefetch.push_back(last_page_num+i);
+        m_fault_uops.emplace(last_page_num+i, list<uop_c *>());
+      }
+    } 
+    std::move(fault_buffer_prefetch.begin(), fault_buffer_prefetch.end(), std::back_inserter(m_fault_buffer_processing));
+    m_fault_buffer_processing.sort();
+
     // 2. select prefetch pages and insert them into m_fault_buffer_processing
   }
-  
-  std::move(m_fault_buffer.begin(), m_fault_buffer.end(), std::back_inserter(m_fault_buffer_processing));
-  m_fault_buffer_processing.sort();
+  // What if the number of m_fault_buffer is more than the speicifed number?
+
+  else{ 
+    std::move(m_fault_buffer.begin(), m_fault_buffer.end(), std::back_inserter(m_fault_buffer_processing));
+    m_fault_buffer_processing.sort();
+  }
+  fprintf(m_simBase->g_mystdout, "----Fault Buffer Processing----\n");
+  for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
+  {
+    fprintf(m_simBase->g_mystdout, "%llu\n", *it);
+  }
   m_fault_uops_processing = m_fault_uops;
   
   m_fault_buffer.clear();

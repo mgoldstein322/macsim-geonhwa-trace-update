@@ -140,6 +140,7 @@ private:
   
   void begin_batch_processing();
   bool do_batch_processing();
+  bool is_loaded(Addr addr);
 
   Addr get_page_number(Addr addr) { return addr >> m_offset_bits; }
   Addr get_page_offset(Addr addr) { return addr & (m_page_size - 1); }
