@@ -28,6 +28,9 @@ POSSIBILITY OF SUCH DAMAGE.
 
 
 /* -*- Mode: c -*- */
+param<PREFETCH_LOOKAHEAD, prefetch_lookahead, uns32, 0>
+param<PREFETCH_POLICY, prefetch_policy, string, random>
+param<ENABLE_PREFETCH, enable_prefetch, bool, 0>
 
 param<FE_SIZE, 						fe_size, 						uns32, 	256>
 

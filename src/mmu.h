@@ -189,8 +189,19 @@ private:
   unordered_set<Addr> m_unique_pages;
 
 // prefetch
-private:
   bool m_enable_prefetch;
+  uns32 m_prefetch_lookahead;
+  string m_prefetch_policy;
+
+  std::map<Addr, std::list<bool>> m_tree_set;
+  bool check_node(std::list<bool>*, Addr);
+  void update_node(std::list<Addr>*, std::list<bool>*, Addr, Addr);
+  int calc_node(std::list<bool>*, Addr);
+  int num_subgraph(std::list<bool>* target_tree, Addr);
+
+  bool is_leaf(std::list<bool>*, Addr);
+
+  void update_tree(std::list<Addr>*, std::list<bool>*, Addr, Addr);
 };
 
 #endif //MMU_H_INCLUDED

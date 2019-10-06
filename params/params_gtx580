@@ -92,7 +92,7 @@ enable_pref_small_core 0
 
 bug_detector_enable 1
 
-sim_cycle_count 0
+sim_cycle_count 100000
 max_insts 200000000
 heartbeat_interval 1000000
 forward_progress_limit 50000
