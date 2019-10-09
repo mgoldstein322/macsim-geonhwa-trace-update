@@ -193,6 +193,8 @@ private:
   uns32 m_prefetch_lookahead;
   string m_prefetch_policy;
 
+  std::map<Addr, int> m_prefetch_pages_access_count;
+
   std::map<Addr, std::list<bool>> m_tree_set;
   bool check_node(std::list<bool>*, Addr);
   void update_node(std::list<Addr>*, std::list<bool>*, Addr, Addr);

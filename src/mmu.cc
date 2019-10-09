@@ -58,7 +58,6 @@ using namespace std;
   if (m_core_id == *m_simBase->m_knobs->KNOB_DEBUG_CORE_ID) { \
     _DEBUG(*m_simBase->m_knobs->KNOB_DEBUG_MMU, ##args);      \
   }
-
 void MMU::ReplacementUnit::update(Addr page_number)
 {
   auto it = m_table.find(page_number);
@@ -129,6 +128,7 @@ void MMU::initialize(macsim_c *simBase)
   m_batch_processing_start_cycle = 0;
   m_batch_processing_transfer_start_cycle = 0;
   m_batch_processing_overhead = m_simBase->m_knobs->KNOB_BATCH_PROCESSING_OVERHEAD->getValue();
+STAT_EVENT_N(UNIQUE_PAGE, m_unique_pages.size());
 
   m_fault_buffer_size = m_simBase->m_knobs->KNOB_FAULT_BUFFER_SIZE->getValue();
 
@@ -140,6 +140,20 @@ void MMU::initialize(macsim_c *simBase)
 
 void MMU::finalize()
 {
+  int never_accessed_count = 0;
+  for(auto it = m_prefetch_pages_access_count.begin(); 
+    it != m_prefetch_pages_access_count.end();
+    ++it){
+    fprintf(m_simBase->g_mystdout, "Page num %llu Access count %d\n", it->first, it->second);
+    if(it->second == 0)
+      never_accessed_count++;
+  }
+  fprintf(m_simBase->g_mystdout, "Didn't access %d out of %lu\n", 
+    never_accessed_count, m_prefetch_pages_access_count.size());
+ 
+  STAT_EVENT_N(UNUSED_PREFETCH_PAGE_COUNT_TOT, never_accessed_count);
+  STAT_EVENT_N(UNUSED_PREFETCH_PAGE_COUNT_RATIO, never_accessed_count);
+
   STAT_EVENT_N(UNIQUE_PAGE, m_unique_pages.size());
 }
 
@@ -161,6 +175,11 @@ bool MMU::translate(uop_c *cur_uop)
     cur_uop->m_paddr = (frame_number << m_offset_bits) | page_offset;
     cur_uop->m_state = OS_TRANS_DONE;
     cur_uop->m_translated = true;
+    
+    if(m_prefetch_pages_access_count.find(page_number) 
+      != m_prefetch_pages_access_count.end())
+      m_prefetch_pages_access_count[page_number] += 1;
+
 
     DEBUG("TLB hit at %llu - core_id:%d thread_id:%d inst_num:%llu uop_num:%llu\n",
           m_cycle, cur_uop->m_core_id, cur_uop->m_thread_id, cur_uop->m_inst_num, cur_uop->m_uop_num);
@@ -297,6 +316,10 @@ void MMU::do_page_table_walks(uop_c *cur_uop)
     m_replacement_unit->update(page_number);
 
     STAT_EVENT(PAGETABLE_HIT);
+    
+    if(m_prefetch_pages_access_count.find(page_number) 
+      != m_prefetch_pages_access_count.end())
+      m_prefetch_pages_access_count[page_number] += 1;
 
     DEBUG("page table hit at %llu - core_id:%d thread_id:%d inst_num:%llu uop_num:%llu\n",
           m_cycle, cur_uop->m_core_id, cur_uop->m_thread_id, cur_uop->m_inst_num, cur_uop->m_uop_num);
@@ -543,6 +566,7 @@ bool MMU::is_loaded(Addr page_number){
 void MMU::begin_batch_processing()
 {
   assert(m_batch_processing == false);
+  STAT_EVENT_N(FAULT_PAGE_COUNT_TOT, m_fault_buffer.size());
   // Prefetch enabled
   if (m_enable_prefetch) {
     if(m_prefetch_policy == "RANDOM"){
@@ -554,11 +578,12 @@ void MMU::begin_batch_processing()
       m_fault_buffer_processing.sort();
       
       Addr last_page_num = 0;
+      int num_prefetch_count = 0;
       for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
       {
 	Addr cur_page_num = *(it);
 	fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
-	for(uns64 i =1; i < m_prefetch_lookahead; i++){
+	for(uns64 i =0; i < m_prefetch_lookahead; i++){
 	  uns64 rand_offset = rand() % 512 + 1;
 	  // check cur_page_num + rand_offset is in the batch
 	  Addr prefetch_candidate = cur_page_num;
@@ -579,12 +604,17 @@ void MMU::begin_batch_processing()
 	  
 	  if(!is_contained){
 	    if(!is_loaded(prefetch_candidate)){
+	      num_prefetch_count+= 1;
+	      m_prefetch_pages_access_count[prefetch_candidate] = 0;
 	      fault_buffer_prefetch.push_back(prefetch_candidate);
 	      m_fault_uops.emplace(prefetch_candidate, list<uop_c *>());
 	    }
 	  }
 	}      
       }
+      
+      STAT_EVENT_N(PREFETCH_PAGE_COUNT_TOT, num_prefetch_count);
+      STAT_EVENT_N(PREFETCH_PAGE_PER_EACH_FAULT, num_prefetch_count);
 
       std::move(fault_buffer_prefetch.begin(), fault_buffer_prefetch.end(), std::back_inserter(m_fault_buffer_processing));
       m_fault_buffer_processing.sort();
@@ -596,6 +626,8 @@ void MMU::begin_batch_processing()
       m_fault_buffer_processing.sort();
       
       Addr last_page_num = 0;
+      int num_prefetch_count = 0; 
+      int num_batch_processing = 0;
       for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
       {
 	Addr cur_page_num = *(it);
@@ -606,6 +638,8 @@ void MMU::begin_batch_processing()
 	    break;
 	  if(last_page_num + i < cur_page_num){
 	    if(!is_loaded(last_page_num+i)){
+	      num_prefetch_count += 1;
+	      m_prefetch_pages_access_count[last_page_num+i] = 0;
 	      fault_buffer_prefetch.push_back(last_page_num+i);
 	      m_fault_uops.emplace(last_page_num+i, list<uop_c *>());
 	    }
@@ -616,16 +650,20 @@ void MMU::begin_batch_processing()
 	fprintf(m_simBase->g_mystdout, "%llu\n", *it);
 	last_page_num = cur_page_num;
       }
-
       // Add after last page number
       for(uns64 i =1; i < m_prefetch_lookahead; i++){
 	if(last_page_num == 0)
 	  break;
 	if(!is_loaded(last_page_num+i)){
+	  num_prefetch_count += 1;
+	  m_prefetch_pages_access_count[last_page_num+i] = 0;
 	  fault_buffer_prefetch.push_back(last_page_num+i);
 	  m_fault_uops.emplace(last_page_num+i, list<uop_c *>());
 	}
       } 
+      STAT_EVENT_N(PREFETCH_PAGE_COUNT_TOT, num_prefetch_count);
+      STAT_EVENT_N(PREFETCH_PAGE_PER_EACH_FAULT, num_prefetch_count);
+
       std::move(fault_buffer_prefetch.begin(), fault_buffer_prefetch.end(), std::back_inserter(m_fault_buffer_processing));
       m_fault_buffer_processing.sort();
     }
@@ -635,7 +673,7 @@ void MMU::begin_batch_processing()
       // Mark and update and add to prefetch
       list<Addr> fault_buffer_prefetch;
       std::move(m_fault_buffer.begin(), m_fault_buffer.end(), std::back_inserter(m_fault_buffer_processing));
-
+      int num_prefetch_count = 0;
       for (std::unordered_set<Addr>::iterator it=m_fault_buffer.begin(); it != m_fault_buffer.end(); ++it)
       {
         // page_size = 4k
@@ -644,28 +682,31 @@ void MMU::begin_batch_processing()
 	// set size should be 63
 	Addr cur_page_num = *(it);
 	Addr leaf_page_num = (cur_page_num >> 4) << 4;
+	Addr tree_base_num = cur_page_num >> 9;
 	fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
+	fprintf(m_simBase->g_mystdout, "leaf page num %llu\n", leaf_page_num);
+	fprintf(m_simBase->g_mystdout, "tree base num %llu\n", tree_base_num);
 	//map and set
 	std::list<bool>* cur_tree;
-	if(m_tree_set.find(leaf_page_num) == m_tree_set.end()){
+	if(m_tree_set.find(tree_base_num) == m_tree_set.end()){
 	  //make new tree for this leaf
+	  fprintf(m_simBase->g_mystdout, "There is no tree for tree base num %llu\n", tree_base_num);
 	  std::list<bool>* new_tree = new std::list<bool>;
 	  for(int i = 0; i < 63; i++)
 	    new_tree -> push_back(false);
-	  m_tree_set[leaf_page_num] = *new_tree;
+	  m_tree_set[tree_base_num] = *new_tree;
 	  cur_tree = new_tree;
 	}
 	else
-	  cur_tree =&m_tree_set[leaf_page_num];
+	  cur_tree =&m_tree_set[tree_base_num];
 	
 	// Check tree and add to fault_buffer_prefetch
-	update_tree(&fault_buffer_prefetch, cur_tree, cur_page_num - leaf_page_num, leaf_page_num);
+	update_tree(&fault_buffer_prefetch, cur_tree, tree_base_num, leaf_page_num);
 	//fprintf(m_simBase->g_mystdout, "%llu\n", *it);
       }
       // Insert entries in fault_buffer_prefetch to m_fault_buffer_processsing if it's not in
-      int num_prefetch_count = 0;
       for(std::list<Addr>::iterator it = fault_buffer_prefetch.begin(); it != fault_buffer_prefetch.end(); ++it)
-      {
+      { 
 	bool is_contained = false;
 	std::list<Addr>::iterator contain_it;
 	Addr prefetch_candidate = *it;
@@ -676,12 +717,18 @@ void MMU::begin_batch_processing()
 	if(!is_contained){
 	  if(!is_loaded(*it)){
 	    num_prefetch_count += 1;
+	    m_prefetch_pages_access_count[*it] = 0;
+
 	    m_fault_buffer_processing.push_back(*it);
 	    m_fault_uops.emplace(*it, list<uop_c *>());
+	    fprintf(m_simBase->g_mystdout, "Prefetched from tree %llu\n", *it);
 	  }
 	}
       }
       fprintf(m_simBase->g_mystdout, "Prefetched %d out of %zu candidates\n", num_prefetch_count, fault_buffer_prefetch.size());
+      
+      STAT_EVENT_N(PREFETCH_PAGE_COUNT_TOT, num_prefetch_count);
+      STAT_EVENT_N(PREFETCH_PAGE_PER_EACH_FAULT, num_prefetch_count);
 
       m_fault_buffer_processing.sort();
     }
@@ -713,6 +760,7 @@ void MMU::begin_batch_processing()
   
   m_batch_processing_next_event_cycle = -1;
   
+  STAT_EVENT(FAULT_BATCH_PROCESSING_COUNT_TOT);
   DEBUG("batch processing begins at %llu fault buffer size %zu\n",
         m_cycle, m_fault_buffer_processing.size());
 }
@@ -720,8 +768,7 @@ void MMU::begin_batch_processing()
 // Following functions are used for tree-based prefetch
 bool MMU::is_leaf(std::list<bool>* target_tree, Addr index){
   Addr thres = index * 2 + 1;
-  DEBUG("is_leaf check index %llu with size %zu\n",
-        index, target_tree->size());
+  //fprintf(m_simBase->g_mystdout, "is_leaf index %llu and size %zu\n", index, target_tree->size());
   assert(index < target_tree -> size());  // index should be valid
   if(thres >= target_tree->size())
     return true;
@@ -740,7 +787,7 @@ void MMU::update_node(std::list<Addr>* result_buffer, std::list<bool>* target_tr
     else{
       *element_it = true;
       for(Addr i = 0; i < 16; i++){
-        result_buffer->push_back(start_page_num + index*16 + i);
+        result_buffer->push_back(start_page_num + (index-31)*16 + i);
       }
       return;
     }
@@ -790,41 +837,52 @@ int MMU::num_subgraph(std::list<bool>* target_tree, Addr index){
 }
 
 bool MMU::check_node(std::list<bool>* target_tree, Addr index){
+  fprintf(m_simBase->g_mystdout, 
+      "check_node got calc_node %d with num_subgraph %d\n", 
+      calc_node(target_tree, index), num_subgraph(target_tree, index));
+    
   if (calc_node(target_tree, index) > num_subgraph(target_tree, index) / 2)
+  {
     return true;
+  }
   else
     return false;
 }
 
 // TODO Eviction should clear tree.
 // This function is used for tree-based prefetch policy
-void MMU::update_tree(std::list<Addr>* result_buffer, std::list<bool>* cur_tree, Addr target_page_num, Addr start_page_num){
+void MMU::update_tree(std::list<Addr>* result_buffer, std::list<bool>* cur_tree, Addr tree_base_num, Addr leaf_page_num){
+  Addr tree_base_page_num = tree_base_num << 9; 
+  Addr index = (leaf_page_num - tree_base_page_num) >> 4;
+
   // leafs are 31~62
   std::list<bool>::iterator element_it = cur_tree->begin();
-  std::advance(element_it, 31+target_page_num);
-       
+  std::advance(element_it, 31+index);   
   if(*element_it == true)
     return;
 
   // (index - 1) / 2 is parent
   // index*2 + 1, +2 are children
   for(Addr i = 0; i < 16; i++)
-    result_buffer->push_back(start_page_num + target_page_num*16 + i);
+    result_buffer->push_back(tree_base_page_num + index*16 + i);
   *element_it = true;
-  
+  fprintf(m_simBase->g_mystdout, "Mark index %llu with tree_base %llu\n", index+31, tree_base_page_num);
+
   //if it is root, stop
-  Addr index = (31+target_page_num - 1)/2;
+  index = (31+index - 1)/2;
   while(true){
-    if(index == 0)
-      break;
+    fprintf(m_simBase->g_mystdout, "Try update node index %llu with tree_base %llu\n", index, tree_base_page_num);
     if(!check_node(cur_tree, index))
       break;
-    
+     
     std::list<bool>::iterator node_it = cur_tree->begin();
     std::advance(node_it, index);
     
     *node_it = true;
-    update_node(result_buffer, cur_tree, index, start_page_num);
+    fprintf(m_simBase->g_mystdout, "Update node %llu with tree_base %llu\n", index, tree_base_page_num);
+    update_node(result_buffer, cur_tree, index, tree_base_page_num);
+    if(index == 0)
+      break;
     index = (index-1)/2; 
   }
 }
