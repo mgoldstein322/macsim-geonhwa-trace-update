@@ -189,6 +189,8 @@ private:
   unordered_set<Addr> m_unique_pages;
 
 // prefetch
+  std::list<uns32> m_fault_pages_latency;
+  void update_latency();
   bool m_enable_prefetch;
   uns32 m_prefetch_lookahead;
   string m_prefetch_policy;

@@ -387,13 +387,19 @@ bool MMU::do_batch_processing()
   // time between batch processing initialization and first transfer
   if (m_cycle < m_batch_processing_transfer_start_cycle)
     return false;
-
+  
+  uns32 cur_fault_latency = *(m_fault_pages_latency.begin());
   // preparation for the first transfer after overhead
   if (!m_batch_processing_first_transfer_started) {
     if (m_free_frames_remaining > 0)
-      m_batch_processing_next_event_cycle = m_cycle + m_fault_latency;
+    {
+      m_batch_processing_next_event_cycle = m_cycle + cur_fault_latency; 
+      //m_batch_processing_next_event_cycle = m_cycle + m_fault_latency;
+    }
     else {
-      m_batch_processing_next_event_cycle = m_cycle + m_eviction_latency + m_fault_latency;
+      m_batch_processing_next_event_cycle = m_cycle + m_eviction_latency + cur_fault_latency; 
+
+      //m_batch_processing_next_event_cycle = m_cycle + m_eviction_latency + m_fault_latency;
       
       // evict a page
       Addr victim_page = m_replacement_unit->getVictim();
@@ -442,7 +448,11 @@ bool MMU::do_batch_processing()
 
   // allocate a new page
   Addr page_number = m_fault_buffer_processing.front();
+  assert(m_fault_buffer_processing.size() == m_fault_pages_latency.size());
+  STAT_EVENT_N(PAGE_TRANSFER_LATENCY_CYCLE_TOT, *(m_fault_pages_latency.begin()));
   m_fault_buffer_processing.pop_front();
+  m_fault_pages_latency.pop_front();
+
   Addr frame_number = m_frame_to_allocate;
 
   DEBUG("fault resolved page_number:%llx at %llu\n", page_number, m_cycle);
@@ -500,9 +510,15 @@ bool MMU::do_batch_processing()
 
   if (!m_fault_buffer_processing.empty()) {
     // evict a page if page is full
-    if (m_free_frames_remaining > 0)
-      m_batch_processing_next_event_cycle = m_cycle + m_fault_latency;
+    // For adpative bandwidth,
+    // m_fault_pages_latency can have latency for each page
+    // anaylzed when m_fault_buffer_processing is created.
+    if (m_free_frames_remaining > 0){
+      m_batch_processing_next_event_cycle = m_cycle + cur_fault_latency;
+      //m_batch_processing_next_event_cycle = m_cycle + m_fault_latency;
+    }
     else {
+      m_batch_processing_next_event_cycle = m_cycle + m_eviction_latency + cur_fault_latency;
       m_batch_processing_next_event_cycle = m_cycle + m_eviction_latency + m_fault_latency;
       
       // evict a page
@@ -582,7 +598,7 @@ void MMU::begin_batch_processing()
       for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
       {
 	Addr cur_page_num = *(it);
-	fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
+	//fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
 	for(uns64 i =0; i < m_prefetch_lookahead; i++){
 	  uns64 rand_offset = rand() % 512 + 1;
 	  // check cur_page_num + rand_offset is in the batch
@@ -631,8 +647,8 @@ void MMU::begin_batch_processing()
       for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
       {
 	Addr cur_page_num = *(it);
-	fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
-	fprintf(m_simBase->g_mystdout, "last page num %llu\n", last_page_num);
+	//fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
+	//fprintf(m_simBase->g_mystdout, "last page num %llu\n", last_page_num);
 	for(uns64 i =1; i < m_prefetch_lookahead; i++){
 	  if(last_page_num == 0)
 	    break;
@@ -742,12 +758,25 @@ void MMU::begin_batch_processing()
     std::move(m_fault_buffer.begin(), m_fault_buffer.end(), std::back_inserter(m_fault_buffer_processing));
     m_fault_buffer_processing.sort();
   }
-  
+ 
+  // Now analyze m_fault_buffer_processing and set
+  // m_fault_pages latency accordingly.
+
   fprintf(m_simBase->g_mystdout, "----Fault Buffer Processing----\n");
+  /*
   for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
   {
     fprintf(m_simBase->g_mystdout, "%llu\n", *it);
-  }
+  }*/
+  
+  update_latency();
+  /*
+  for (std::list<uns32>::iterator it=m_fault_pages_latency.begin(); it != m_fault_pages_latency.end(); ++it)
+  {
+    fprintf(m_simBase->g_mystdout, "%u\n", *it);
+  }*/
+  
+
   m_fault_uops_processing = m_fault_uops;
   
   m_fault_buffer.clear();
@@ -759,10 +788,89 @@ void MMU::begin_batch_processing()
   m_batch_processing_transfer_start_cycle = m_cycle + m_batch_processing_overhead;
   
   m_batch_processing_next_event_cycle = -1;
-  
+  STAT_EVENT_N(PAGE_TRANSFER_LATENCY_CYCLE_TOT, m_batch_processing_overhead);
+ 
   STAT_EVENT(FAULT_BATCH_PROCESSING_COUNT_TOT);
   DEBUG("batch processing begins at %llu fault buffer size %zu\n",
         m_cycle, m_fault_buffer_processing.size());
+}
+
+void MMU::update_latency(){
+  int num_consecutive = 0;
+  int start = 0;
+  int end = 0;
+  Addr last_addr;
+  bool is_consecutive= false;
+  for(std::list<Addr>::iterator it = m_fault_buffer_processing.begin(); 
+    it!= m_fault_buffer_processing.end(); ++it){
+    if(it == m_fault_buffer_processing.begin()){
+      num_consecutive++;
+      last_addr = *it;
+      continue;
+    }
+    //check consecutive
+    if(num_consecutive == 0){
+      last_addr = *it;
+      num_consecutive ++;
+      continue;
+    }
+    //fprintf(m_simBase->g_mystdout, "last addr: %llu\n", last_addr);
+    //fprintf(m_simBase->g_mystdout, "it: %llu\n", *it);
+    //fprintf(m_simBase->g_mystdout, "it-last_addr: %llu\n", *it - last_addr);
+    //fprintf(m_simBase->g_mystdout, "num_consecutive: %d\n", num_consecutive);
+   
+    if(((last_addr >> 9) == (*it >> 9)) && ((*it - last_addr) == 1)){
+      is_consecutive = true;
+    }
+    else
+      is_consecutive = false;
+
+    if(is_consecutive){
+      last_addr = *it;
+      num_consecutive++;
+    }
+    else{
+      // update start to end to num_consectuive
+      uns32 bandwidth_ratio = 1;
+      if(num_consecutive < 4)
+        bandwidth_ratio =100;
+      else if(num_consecutive < 16)
+        bandwidth_ratio = 200;
+      else if(num_consecutive < 64)
+        bandwidth_ratio = 263;
+      else if(num_consecutive < 256)
+        bandwidth_ratio = 326;
+      else
+        bandwidth_ratio = 348;
+      uns32 effective_overhead = m_fault_latency * 100 / bandwidth_ratio;
+
+      for(int i = 0; i < num_consecutive; i++)
+        m_fault_pages_latency.push_back(effective_overhead);
+
+      num_consecutive = 1;
+      last_addr = *it;
+      start = end+1;
+      end = end+1;
+    }
+  }
+  uns32 bandwidth_ratio = 1;
+  if(num_consecutive < 4)
+    bandwidth_ratio =100;
+  else if(num_consecutive < 16)
+    bandwidth_ratio = 200;
+  else if(num_consecutive < 64)
+    bandwidth_ratio = 263;
+  else if(num_consecutive < 256)
+    bandwidth_ratio = 326;
+  else
+    bandwidth_ratio = 348;
+  uns32 effective_overhead = m_fault_latency * 100 / bandwidth_ratio;
+
+  for(int i = 0; i < num_consecutive; i++)
+    m_fault_pages_latency.push_back(effective_overhead);
+
+
+
 }
 
 // Following functions are used for tree-based prefetch
@@ -872,15 +980,18 @@ void MMU::update_tree(std::list<Addr>* result_buffer, std::list<bool>* cur_tree,
   index = (31+index - 1)/2;
   while(true){
     fprintf(m_simBase->g_mystdout, "Try update node index %llu with tree_base %llu\n", index, tree_base_page_num);
-    if(!check_node(cur_tree, index))
-      break;
-     
-    std::list<bool>::iterator node_it = cur_tree->begin();
-    std::advance(node_it, index);
-    
-    *node_it = true;
-    fprintf(m_simBase->g_mystdout, "Update node %llu with tree_base %llu\n", index, tree_base_page_num);
-    update_node(result_buffer, cur_tree, index, tree_base_page_num);
+    if(!check_node(cur_tree, index)){
+      ;
+    }
+    else
+    { 
+      std::list<bool>::iterator node_it = cur_tree->begin();
+      std::advance(node_it, index);
+      
+      *node_it = true;
+      fprintf(m_simBase->g_mystdout, "Update node %llu with tree_base %llu\n", index, tree_base_page_num);
+      update_node(result_buffer, cur_tree, index, tree_base_page_num);
+    }
     if(index == 0)
       break;
     index = (index-1)/2; 
