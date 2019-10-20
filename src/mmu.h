@@ -188,23 +188,22 @@ private:
 
   unordered_set<Addr> m_unique_pages;
 
-// prefetch
-  std::list<uns32> m_fault_pages_latency;
-  void update_latency();
+  // Funtions and variables for prefetching
   bool m_enable_prefetch;
   uns32 m_prefetch_lookahead;
   string m_prefetch_policy;
 
+  std::list<uns32> m_fault_pages_latency;
+  void update_latency();
+  
   std::map<Addr, int> m_prefetch_pages_access_count;
 
   std::map<Addr, std::list<bool>> m_tree_set;
   bool check_node(std::list<bool>*, Addr);
   void update_node(std::list<Addr>*, std::list<bool>*, Addr, Addr);
-  int calc_node(std::list<bool>*, Addr);
-  int num_subgraph(std::list<bool>* target_tree, Addr);
-
+  int calculate_node(std::list<bool>*, Addr);
+  int get_node_counts(std::list<bool>* target_tree, Addr);
   bool is_leaf(std::list<bool>*, Addr);
-
   void update_tree(std::list<Addr>*, std::list<bool>*, Addr, Addr);
 };
 

@@ -144,16 +144,12 @@ void MMU::finalize()
   for(auto it = m_prefetch_pages_access_count.begin(); 
     it != m_prefetch_pages_access_count.end();
     ++it){
-    fprintf(m_simBase->g_mystdout, "Page num %llu Access count %d\n", it->first, it->second);
     if(it->second == 0)
       never_accessed_count++;
   }
-  fprintf(m_simBase->g_mystdout, "Didn't access %d out of %lu\n", 
-    never_accessed_count, m_prefetch_pages_access_count.size());
  
   STAT_EVENT_N(UNUSED_PREFETCH_PAGE_COUNT_TOT, never_accessed_count);
   STAT_EVENT_N(UNUSED_PREFETCH_PAGE_COUNT_RATIO, never_accessed_count);
-
   STAT_EVENT_N(UNIQUE_PAGE, m_unique_pages.size());
 }
 
@@ -585,6 +581,7 @@ void MMU::begin_batch_processing()
   STAT_EVENT_N(FAULT_PAGE_COUNT_TOT, m_fault_buffer.size());
   // Prefetch enabled
   if (m_enable_prefetch) {
+    // Random Prefetch
     if(m_prefetch_policy == "RANDOM"){
       srand(time(NULL));
 	
@@ -598,7 +595,6 @@ void MMU::begin_batch_processing()
       for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
       {
 	Addr cur_page_num = *(it);
-	//fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
 	for(uns64 i =0; i < m_prefetch_lookahead; i++){
 	  uns64 rand_offset = rand() % 512 + 1;
 	  // check cur_page_num + rand_offset is in the batch
@@ -635,6 +631,7 @@ void MMU::begin_batch_processing()
       std::move(fault_buffer_prefetch.begin(), fault_buffer_prefetch.end(), std::back_inserter(m_fault_buffer_processing));
       m_fault_buffer_processing.sort();
     }
+    // Sequential Prefetch
     else if(m_prefetch_policy == "SEQUENTIAL"){
       // 1. analyze page faults (entries in m_fault_buffer_processing)
       list<Addr> fault_buffer_prefetch;
@@ -647,8 +644,6 @@ void MMU::begin_batch_processing()
       for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
       {
 	Addr cur_page_num = *(it);
-	//fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
-	//fprintf(m_simBase->g_mystdout, "last page num %llu\n", last_page_num);
 	for(uns64 i =1; i < m_prefetch_lookahead; i++){
 	  if(last_page_num == 0)
 	    break;
@@ -663,7 +658,6 @@ void MMU::begin_batch_processing()
 	  else
 	    break;
 	}      
-	fprintf(m_simBase->g_mystdout, "%llu\n", *it);
 	last_page_num = cur_page_num;
       }
       // Add after last page number
@@ -683,7 +677,8 @@ void MMU::begin_batch_processing()
       std::move(fault_buffer_prefetch.begin(), fault_buffer_prefetch.end(), std::back_inserter(m_fault_buffer_processing));
       m_fault_buffer_processing.sort();
     }
-    if(m_prefetch_policy == "TREE"){
+    // Tree-based Prefetch
+    else if(m_prefetch_policy == "TREE"){
       // build tree at constructor
       // Check each entry in m_fault_buffer and add tree-based nodes accordingly
       // Mark and update and add to prefetch
@@ -699,14 +694,10 @@ void MMU::begin_batch_processing()
 	Addr cur_page_num = *(it);
 	Addr leaf_page_num = (cur_page_num >> 4) << 4;
 	Addr tree_base_num = cur_page_num >> 9;
-	fprintf(m_simBase->g_mystdout, "cur page num %llu\n", cur_page_num);
-	fprintf(m_simBase->g_mystdout, "leaf page num %llu\n", leaf_page_num);
-	fprintf(m_simBase->g_mystdout, "tree base num %llu\n", tree_base_num);
 	//map and set
 	std::list<bool>* cur_tree;
 	if(m_tree_set.find(tree_base_num) == m_tree_set.end()){
-	  //make new tree for this leaf
-	  fprintf(m_simBase->g_mystdout, "There is no tree for tree base num %llu\n", tree_base_num);
+	  // Make a new tree for this leaf
 	  std::list<bool>* new_tree = new std::list<bool>;
 	  for(int i = 0; i < 63; i++)
 	    new_tree -> push_back(false);
@@ -718,7 +709,6 @@ void MMU::begin_batch_processing()
 	
 	// Check tree and add to fault_buffer_prefetch
 	update_tree(&fault_buffer_prefetch, cur_tree, tree_base_num, leaf_page_num);
-	//fprintf(m_simBase->g_mystdout, "%llu\n", *it);
       }
       // Insert entries in fault_buffer_prefetch to m_fault_buffer_processsing if it's not in
       for(std::list<Addr>::iterator it = fault_buffer_prefetch.begin(); it != fault_buffer_prefetch.end(); ++it)
@@ -737,11 +727,9 @@ void MMU::begin_batch_processing()
 
 	    m_fault_buffer_processing.push_back(*it);
 	    m_fault_uops.emplace(*it, list<uop_c *>());
-	    fprintf(m_simBase->g_mystdout, "Prefetched from tree %llu\n", *it);
 	  }
 	}
       }
-      fprintf(m_simBase->g_mystdout, "Prefetched %d out of %zu candidates\n", num_prefetch_count, fault_buffer_prefetch.size());
       
       STAT_EVENT_N(PREFETCH_PAGE_COUNT_TOT, num_prefetch_count);
       STAT_EVENT_N(PREFETCH_PAGE_PER_EACH_FAULT, num_prefetch_count);
@@ -761,21 +749,8 @@ void MMU::begin_batch_processing()
  
   // Now analyze m_fault_buffer_processing and set
   // m_fault_pages latency accordingly.
-
-  fprintf(m_simBase->g_mystdout, "----Fault Buffer Processing----\n");
-  /*
-  for (std::list<uns64>::iterator it=m_fault_buffer_processing.begin(); it != m_fault_buffer_processing.end(); ++it)
-  {
-    fprintf(m_simBase->g_mystdout, "%llu\n", *it);
-  }*/
   
   update_latency();
-  /*
-  for (std::list<uns32>::iterator it=m_fault_pages_latency.begin(); it != m_fault_pages_latency.end(); ++it)
-  {
-    fprintf(m_simBase->g_mystdout, "%u\n", *it);
-  }*/
-  
 
   m_fault_uops_processing = m_fault_uops;
   
@@ -808,16 +783,12 @@ void MMU::update_latency(){
       last_addr = *it;
       continue;
     }
-    //check consecutive
+    // Check whether the pages are consecutive
     if(num_consecutive == 0){
       last_addr = *it;
       num_consecutive ++;
       continue;
     }
-    //fprintf(m_simBase->g_mystdout, "last addr: %llu\n", last_addr);
-    //fprintf(m_simBase->g_mystdout, "it: %llu\n", *it);
-    //fprintf(m_simBase->g_mystdout, "it-last_addr: %llu\n", *it - last_addr);
-    //fprintf(m_simBase->g_mystdout, "num_consecutive: %d\n", num_consecutive);
    
     if(((last_addr >> 9) == (*it >> 9)) && ((*it - last_addr) == 1)){
       is_consecutive = true;
@@ -868,15 +839,11 @@ void MMU::update_latency(){
 
   for(int i = 0; i < num_consecutive; i++)
     m_fault_pages_latency.push_back(effective_overhead);
-
-
-
 }
 
 // Following functions are used for tree-based prefetch
 bool MMU::is_leaf(std::list<bool>* target_tree, Addr index){
   Addr thres = index * 2 + 1;
-  //fprintf(m_simBase->g_mystdout, "is_leaf index %llu and size %zu\n", index, target_tree->size());
   assert(index < target_tree -> size());  // index should be valid
   if(thres >= target_tree->size())
     return true;
@@ -909,7 +876,7 @@ void MMU::update_node(std::list<Addr>* result_buffer, std::list<bool>* target_tr
 
 }
 
-int MMU::calc_node(std::list<bool>* target_tree, Addr index){
+int MMU::calculate_node(std::list<bool>* target_tree, Addr index){
   std::list<bool>::iterator element_it = target_tree->begin();
   std::advance(element_it, index);
 
@@ -925,10 +892,11 @@ int MMU::calc_node(std::list<bool>* target_tree, Addr index){
   int this_node_value = 0;
   if(*element_it)
     this_node_value = 1;
-  return calc_node(target_tree, left_child_idx) + calc_node(target_tree, right_child_idx) + this_node_value;
+  return calculate_node(target_tree, left_child_idx) + calculate_node(target_tree, right_child_idx) 
+    + this_node_value;
 }
 
-int MMU::num_subgraph(std::list<bool>* target_tree, Addr index){
+int MMU::get_node_counts(std::list<bool>* target_tree, Addr index){
   assert(index < target_tree->size());  // index should be valid
 
   int sum = 0;
@@ -945,11 +913,7 @@ int MMU::num_subgraph(std::list<bool>* target_tree, Addr index){
 }
 
 bool MMU::check_node(std::list<bool>* target_tree, Addr index){
-  fprintf(m_simBase->g_mystdout, 
-      "check_node got calc_node %d with num_subgraph %d\n", 
-      calc_node(target_tree, index), num_subgraph(target_tree, index));
-    
-  if (calc_node(target_tree, index) > num_subgraph(target_tree, index) / 2)
+  if (calculate_node(target_tree, index) > get_node_counts(target_tree, index) / 2)
   {
     return true;
   }
@@ -957,8 +921,7 @@ bool MMU::check_node(std::list<bool>* target_tree, Addr index){
     return false;
 }
 
-// TODO Eviction should clear tree.
-// This function is used for tree-based prefetch policy
+// TODO Eviction should clear tree. This code does not support eviction.
 void MMU::update_tree(std::list<Addr>* result_buffer, std::list<bool>* cur_tree, Addr tree_base_num, Addr leaf_page_num){
   Addr tree_base_page_num = tree_base_num << 9; 
   Addr index = (leaf_page_num - tree_base_page_num) >> 4;
@@ -974,14 +937,14 @@ void MMU::update_tree(std::list<Addr>* result_buffer, std::list<bool>* cur_tree,
   for(Addr i = 0; i < 16; i++)
     result_buffer->push_back(tree_base_page_num + index*16 + i);
   *element_it = true;
-  fprintf(m_simBase->g_mystdout, "Mark index %llu with tree_base %llu\n", index+31, tree_base_page_num);
 
-  //if it is root, stop
+  // Check and update recursively until it gets to the root node.
   index = (31+index - 1)/2;
   while(true){
-    fprintf(m_simBase->g_mystdout, "Try update node index %llu with tree_base %llu\n", index, tree_base_page_num);
     if(!check_node(cur_tree, index)){
-      ;
+      ; 
+      // Even though this subgraph does not satisfies this condition,
+      // it is still possible to be satisfied in the upper level.
     }
     else
     { 
@@ -989,7 +952,6 @@ void MMU::update_tree(std::list<Addr>* result_buffer, std::list<bool>* cur_tree,
       std::advance(node_it, index);
       
       *node_it = true;
-      fprintf(m_simBase->g_mystdout, "Update node %llu with tree_base %llu\n", index, tree_base_page_num);
       update_node(result_buffer, cur_tree, index, tree_base_page_num);
     }
     if(index == 0)
