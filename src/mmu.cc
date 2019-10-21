@@ -596,6 +596,7 @@ void MMU::begin_batch_processing()
 	for(uns64 i =0; i < m_prefetch_lookahead; i++){
 	  // Random area / page size
 	  // i.e. 2MB / 4KB = 512
+	  // This value may need to be set by Knob.
 	  uns64 rand_offset = rand() % 512 + 1;
 	  
 	  // Check cur_page_num + rand_offset is already in the batch
@@ -692,9 +693,13 @@ void MMU::begin_batch_processing()
 	// leaf node size = 64k = 16 pages
 	// tree size = 2M -- 32 leaf nodes
 	// set size should be 63
+	long num_pages_per_leaf_node_bits = (long)log2(k_num_pages_per_leaf_node);
+	long num_leaf_nodes_bits = (long)log2(k_num_leaf_nodes);
+	long num_tree_offset_bits = num_pages_per_leaf_node_bits + num_leaf_nodes_bits;
+
 	Addr cur_page_num = *(it);
-	Addr leaf_page_num = (cur_page_num >> 4) << 4;
-	Addr tree_base_num = cur_page_num >> 9;
+	Addr leaf_page_num = (cur_page_num >> num_pages_per_leaf_node_bits) << num_pages_per_leaf_node_bits;
+	Addr tree_base_num = cur_page_num >> num_tree_offset_bits;
 	//map and set
 	std::list<bool>* cur_tree;
 	if(m_tree_set.find(tree_base_num) == m_tree_set.end()){
@@ -775,6 +780,11 @@ void MMU::update_latency(){
   int end = 0;
   Addr last_addr;
   bool is_consecutive= false;
+  
+  long num_pages_per_leaf_node_bits = (long)log2(k_num_pages_per_leaf_node);
+  long num_leaf_nodes_bits = (long)log2(k_num_leaf_nodes);
+  long num_tree_offset_bits = num_pages_per_leaf_node_bits + num_leaf_nodes_bits;
+
   for(std::list<Addr>::iterator it = m_fault_buffer_processing.begin(); 
     it!= m_fault_buffer_processing.end(); ++it){
     if(it == m_fault_buffer_processing.begin()){
@@ -782,14 +792,15 @@ void MMU::update_latency(){
       last_addr = *it;
       continue;
     }
-    // Check whether the pages are consecutive
+    
+    // Check whether the pages are consecutive.
     if(num_consecutive == 0){
       last_addr = *it;
       num_consecutive ++;
       continue;
     }
    
-    if(((last_addr >> 9) == (*it >> 9)) && ((*it - last_addr) == 1)){
+    if(((last_addr >> num_tree_offset_bits) == (*it >> num_tree_offset_bits)) && ((*it - last_addr) == 1)){
       is_consecutive = true;
     }
     else
@@ -802,7 +813,8 @@ void MMU::update_latency(){
     else{
       // bandwidth_ratio (%) should be set according to the information about
       // PCIe bandwidth with different trasnfer sizes compared with 4KB.
-      // We assume the m_fault_latency is set for 4KB. 
+      // We assume the m_fault_latency is set for 4KB.
+      // This values may need to be set by Knob.
       uns32 bandwidth_ratio = 1;
       if(num_consecutive < 4)
         bandwidth_ratio =100;
@@ -930,8 +942,11 @@ bool MMU::check_node(std::list<bool>* target_tree, Addr index){
 
 // TODO Eviction should clear tree. This code does not support eviction.
 void MMU::update_tree(std::list<Addr>* result_buffer, std::list<bool>* cur_tree, Addr tree_base_num, Addr leaf_page_num){
-  Addr tree_base_page_num = tree_base_num << 9; 
-  Addr index = (leaf_page_num - tree_base_page_num) >> 4;
+  long num_pages_per_leaf_node_bits = (long)log2(k_num_pages_per_leaf_node);
+  long num_leaf_nodes_bits = (long)log2(k_num_leaf_nodes);
+
+  Addr tree_base_page_num = tree_base_num << (num_leaf_nodes_bits + num_pages_per_leaf_node_bits); 
+  Addr index = (leaf_page_num - tree_base_page_num) >> num_pages_per_leaf_node_bits;
 
   // The index of leaf nodes are (k_num_leaf_nodes-1) ~ (k_num_leaf_nodes*2 - 2)
   // If k_num_leaf_nodes = 32, the index should be 31 ~ 62

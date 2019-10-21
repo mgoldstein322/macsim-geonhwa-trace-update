@@ -205,7 +205,8 @@ private:
   int get_node_counts(std::list<bool>* target_tree, Addr);
   bool is_leaf(std::list<bool>*, Addr);
   void update_tree(std::list<Addr>*, std::list<bool>*, Addr, Addr);
-
+  
+  // These values may need to be set by Knob.
   const int k_num_pages_per_leaf_node = 16;
   const int k_num_leaf_nodes = 32;
 };
