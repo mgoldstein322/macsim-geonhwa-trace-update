@@ -9,6 +9,9 @@ from inst_info import InstInfo
 from helper import *
 import constant
 
+# Command Example
+# python3 parallel_convert.py -n 0 -i /home/geonhwajeong/sde-traces/spr/spr-32-32-32.txt
+
 parser = argparse.ArgumentParser(description='Arguments')
 parser.add_argument(
     '-n', '--num_ins',
@@ -19,17 +22,37 @@ parser.add_argument(
     default=100,     # Default value if -t is not supplied
     metavar='num_sim_lines')
 
+parser.add_argument(
+    '-i', '--input_file',
+    help='absolute directory of the Intel SDE trace file',
+    type=str,
+    nargs='?',
+    )
+
+# /home/geonhwajeong/sde-traces/spr/spr-32-32-32.txt
 args = parser.parse_args()
+
+if(args.input_file == None):
+    print('[ERROR] Please specify the input file path.')
+    print('Take a look at the help messages.')
+    print('python3 parallel_convert.py -h')
+    exit(-1)
+
+# Please change the followings!!!
 
 NUM_SIM_LINES = args.num_ins
 NUM_DIVS = 1
 
-ARCH = 'spr'
-base_dir = '/home/geonhwajeong/sde-traces/%s/'%ARCH
-file_name = '%s-32-32-32.txt'%ARCH
+#ARCH = 'spr'
+full_path = args.input_file
+ 
+file_name = full_path.split('/')[-1]
+base_dir = full_path[:-len(file_name)]
+print(base_dir)
+#base_dir = '/home/geonhwajeong/sde-traces/%s/'%ARCH
+#file_name = '%s-32-32-32.txt'%ARCH
 #file_name = 'skx-xgemm.txt'
-
-full_path = base_dir + file_name
+#full_path = base_dir + file_name
 out_path = full_path.split('.')[0] + '-trace_0.raw'
 
 print('Converting Intel SDE Trace: %s'%(full_path))
