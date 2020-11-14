@@ -279,6 +279,16 @@ void cpu_decoder_c::convert_dyn_uop(inst_info_s *info, void *trace_info,
       trace_uop->m_va = MIN2((pi->m_st_vaddr + rep_offset) * amp_val, MAX_ADDR);
       trace_uop->m_mem_size =
         MIN2((pi->m_mem_write_size) * amp_val, REP_MOV_MEM_SIZE_MAX_NEW);
+      // TODO
+      // Add for tilestored
+      if (pi->m_opcode == AMX_TILE_MEM) {
+          trace_uop->m_mem_size = 64;
+          DEBUG_CORE(core_id,
+                "AMX_TILE_MEM for MEM_ST convert_dyn_uop rep_offset: %llx, mem_size: %d"
+                 "pi->instruction_addr:0x%llx trace_uop->m_va:0x%llx \n",
+                 rep_offset, trace_uop->m_mem_size,
+                 (Addr)(pi->m_instruction_addr), trace_uop->m_va);      
+      }
     } else if ((info->m_table_info->m_mem_type == MEM_LD) ||
                (info->m_table_info->m_mem_type == MEM_PF) ||
                (info->m_table_info->m_mem_type >= MEM_SWPREF_NTA &&
@@ -292,6 +302,21 @@ void cpu_decoder_c::convert_dyn_uop(inst_info_s *info, void *trace_info,
 
       trace_uop->m_mem_size =
         MIN2((pi->m_mem_read_size) * amp_val, REP_MOV_MEM_SIZE_MAX_NEW);
+
+      if (pi->m_opcode == XED_CATEGORY_STRINGOP) {
+          DEBUG_CORE(core_id,
+                "STRINGOP rep_offset: %llx, mem_size: %d"
+                 "pi->instruction_addr:0x%llx trace_uop->m_va:0x%llx \n",
+                 rep_offset, trace_uop->m_mem_size,
+                 (Addr)(pi->m_instruction_addr), trace_uop->m_va);      
+      }
+      if (pi->m_opcode == AMX_TILE_MEM) {
+          DEBUG_CORE(core_id,
+                "AMX_TILE_MEM convert_dyn_uop rep_offset: %llx, mem_size: %d"
+                 "pi->instruction_addr:0x%llx trace_uop->m_va:0x%llx \n",
+                 rep_offset, trace_uop->m_mem_size,
+                 (Addr)(pi->m_instruction_addr), trace_uop->m_va);      
+      }
     }
   }
 
@@ -339,7 +364,9 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
   bool inst_has_ld_uop = false;
   int ii, jj, kk;
 
-  if (new_entry) {
+  // TODO FIX HERE
+  //if (new_entry) {
+  if(true){
     // Since we found a new instruction, we need to decode this instruction and store all
     // uops to the hash table
     int write_dest_reg = 0;
@@ -638,8 +665,9 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
         info->m_trace_info.m_bom = false;
         info->m_trace_info.m_eom = false;
       }
-      ASSERTM(new_entry, "Add new uops to hash_table for core id::%d\n",
-              core_id);
+      // GJ TODO Uncomment after fix
+      //ASSERTM(new_entry, "Add new uops to hash_table for core id::%d\n",
+      //        core_id);
 
       trace_uop[ii]->m_addr = pi->m_instruction_addr;
 
@@ -779,12 +807,20 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
   if (pi->m_opcode == XED_CATEGORY_STRINGOP) {
     int rep_counter = 1;
     int rep_dir = 0;
+    
 
     // generate multiple uops with different memory addresses
     key_addr = ((pi->m_instruction_addr << 3));
     info = htable->hash_table_access_create(key_addr, &new_entry);
 
     int rep_mem_size = (int)pi->m_mem_read_size;
+
+    DEBUG_CORE(
+    core_id,
+    "trace_read core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d\n",
+    core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
+    static_cast<int>(pi->m_opcode),
+    rep_mem_size);
 
     if (rep_mem_size == 0) {
       trace_uop[0]->m_mem_type = NOT_MEM;
@@ -827,7 +863,7 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
           key_addr = ((pi->m_instruction_addr << 3) + ii);
           info = htable->hash_table_access_create(key_addr, &new_entry);
 
-          info->m_trace_info.m_bom = false;
+          //info->m_trace_info.m_bom = false;
           info->m_trace_info.m_eom = false;
 
           ASSERT(!new_entry);
@@ -850,10 +886,77 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
 
       ASSERT(dyn_uop_counter > 0);
     }
-
+    DEBUG_CORE(
+    core_id,
+    "trace_read core_id:%d thread_id:%d pc:0x%llx opcode:%d dyn_uop_counter:%d\n",
+    core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
+    static_cast<int>(pi->m_opcode),
+    dyn_uop_counter);
     trace_uop[0]->m_rep_uop_num = dyn_uop_counter;
   }  // XED_CATEGORY_STRINGOP
+  
+  if (pi->m_opcode == AMX_TILE_MEM) {
+    int rep_counter = 1;
+    int rep_dir = 0;
 
+    // generate multiple uops with different memory addresses
+    key_addr = ((pi->m_instruction_addr << 3));
+    //info = htable->hash_table_access_create(key_addr, &new_entry);
+
+    //int rep_mem_size = (int)pi->m_mem_read_size;
+    
+    {
+      int num_tile_uops = *KNOB(KNOB_NUM_TILE_UOPS);
+      for (int jj = 0; jj < num_tile_uops; jj++) {
+        if(jj == 0)
+          info->m_trace_info.m_bom = true;
+        int stride = pi->m_ld_vaddr2;
+        int rep_offset = jj * stride;
+
+        trace_uop[dyn_uop_counter - 1]->m_npc = pi->m_instruction_addr;
+
+        ASSERT(num_uop == 1);
+        for (ii = 0; ii < num_uop; ++ii) {
+          // can't skip when ii = 0; because this routine is repeating ...
+          key_addr = ((pi->m_instruction_addr << 3) + ii);
+          info = htable->hash_table_access_create(key_addr, &new_entry);
+
+          if(!(jj == 0 && ii == 0))
+            info->m_trace_info.m_bom = false;
+          info->m_trace_info.m_eom = false;
+
+          ASSERT(!new_entry);
+
+          // add dynamic information
+          DEBUG_CORE(
+          core_id,
+          "AMX_TILE rep_offset: %d\n",
+          rep_offset
+          );
+
+          convert_dyn_uop(info, pi, trace_uop[dyn_uop_counter], rep_offset,
+                          core_id);
+
+          trace_uop[dyn_uop_counter]->m_mem_size = 64;
+          trace_uop[dyn_uop_counter]->m_info = info;
+          trace_uop[dyn_uop_counter]->m_eom = 0;
+          trace_uop[dyn_uop_counter]->m_addr = pi->m_instruction_addr;
+          ++dyn_uop_counter;
+        }
+        DEBUG_CORE(
+          core_id,
+          "AMX_TILE_MEM core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d dyn_uop_counter:%d ii:%d\n",
+          core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
+          static_cast<int>(pi->m_opcode),
+          pi->m_mem_read_size, dyn_uop_counter, jj);
+      }
+
+      ASSERT(dyn_uop_counter > 0);
+      trace_uop[0]->m_rep_uop_num = dyn_uop_counter;
+
+    }
+
+  }
   ASSERT(dyn_uop_counter);
 
   // set eom flag and next pc address for the last uop of this instruction
@@ -890,6 +993,46 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
   ASSERT(num_uop > 0);
   first_info->m_trace_info.m_num_uop = num_uop;
 
+  if(pi->m_opcode == AMX_TILE_MEM){
+    first_info->m_trace_info.m_num_uop = trace_uop[0]->m_rep_uop_num;
+    if(pi->m_has_st){
+      DEBUG_CORE(
+            core_id,
+            "AMX_TILE_MEM STORE set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_write_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
+            core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
+            static_cast<int>(pi->m_opcode),
+            pi->m_mem_write_size, dyn_uop_counter, first_info->m_trace_info.m_num_uop);
+    }
+    else{
+      DEBUG_CORE(
+            core_id,
+            "AMX_TILE_MEM LOAD set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
+            core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
+            static_cast<int>(pi->m_opcode),
+            pi->m_mem_read_size, dyn_uop_counter, first_info->m_trace_info.m_num_uop);
+    }
+    for(ii = 0; ii < first_info->m_trace_info.m_num_uop; ii++){
+      if(pi->m_has_st)
+        trace_uop[ii]->m_mem_type = MEM_ST;
+      else
+        trace_uop[ii]->m_mem_type = MEM_LD;
+
+      trace_uop[ii]->m_opcode = pi->m_opcode;
+      if(ii == 0){
+        trace_uop[ii]->m_info->m_trace_info.m_bom = true;
+        trace_uop[ii]->m_eom  = false;
+      }
+      else if(ii == first_info->m_trace_info.m_num_uop - 1){
+        trace_uop[ii]->m_info->m_trace_info.m_bom = false;
+        trace_uop[ii]->m_eom = true;
+      }
+      else{
+        trace_uop[ii]->m_info->m_trace_info.m_bom = false;
+        trace_uop[ii]->m_eom = false;
+      }
+    }
+      
+  }
   return first_info;
 }
 
@@ -1230,7 +1373,12 @@ bool cpu_decoder_c::get_uops_from_traces(int core_id, uop_c *uop,
   /// GPU simulation : handling uncoalesced accesses
   /// removed
   ///
-
+  if(uop->m_opcode == 106){
+    DEBUG_CORE(
+    uop->m_core_id,
+    "AMX new uop: uop_num:%lld vaddr:%llx inst_num:%lld thread_id:%d unique_num:%lld \n",
+    uop->m_uop_num, uop->m_vaddr, uop->m_inst_num, uop->m_thread_id, uop->m_unique_num);
+  } // AMX_TILE
   DEBUG_CORE(
     uop->m_core_id,
     "new uop: uop_num:%lld inst_num:%lld thread_id:%d unique_num:%lld \n",

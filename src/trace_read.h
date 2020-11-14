@@ -388,6 +388,7 @@ typedef enum CPU_OPCODE_ENUM_ {
   PREFETCH_T2,
   GPU_EN,
   CPU_OPCODE_LAST,
+  AMX_TILE_MEM,
 } CPU_OPCODE_ENUM;
 
 // identical to enum in PTX trace generator

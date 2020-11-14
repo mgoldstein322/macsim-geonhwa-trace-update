@@ -41,7 +41,7 @@ if(args.input_file == None):
 # Please change the followings!!!
 
 NUM_SIM_LINES = args.num_ins
-NUM_DIVS = 1
+NUM_DIVS = 8
 
 #ARCH = 'spr'
 full_path = args.input_file
@@ -58,15 +58,18 @@ out_path = full_path.split('.')[0] + '-trace_0.raw'
 print('Converting Intel SDE Trace: %s'%(full_path))
 print('The result will be saved at: %s'%(out_path))
 
-print("Find the line numbers for time function")
-tick_nums = find_ins(full_path, '0x434780')
-print(tick_nums)
+use_time_tick = False
+if use_time_tick:
+    print("Find the line numbers for time function")
+    tick_nums = find_ins(full_path, '0x434780')
+    print(tick_nums)
 
-LINE_START = tick_nums[2] + 23
-LINE_END = tick_nums[3]  - 1
+    LINE_START = tick_nums[2] + 23
+    LINE_END = tick_nums[3]  - 1
 
 print("Begin conversion from SDE Trace to Macsim Trace")
-print("from line # %d to %d"%(LINE_START, LINE_END))
+if use_time_tick:
+    print("from line # %d to %d"%(LINE_START, LINE_END))
 
 # Read
 # INS
@@ -77,29 +80,33 @@ print("from line # %d to %d"%(LINE_START, LINE_END))
 inst_info = InstInfo()
 file1 = open(full_path, 'r')
 lines = file1.readlines() 
-lines = lines[LINE_START:LINE_END+1]
+if use_time_tick:
+    lines = lines[LINE_START:LINE_END+1]
 print('Check the first line\n %s'%(lines[0]))
 
 # Now find array for division
 # n_0, n_1, ... , n_8
 # 0~n_0-1, n_0~n_1 -1 ... , n_8 ~ last
 div_points = [0]
-
+MANUAL = True
+if MANUAL:
+    div_points = [0, 5115177]
+if MANUAL is False:
 # we need num_divs - 1 points
-for i in range(NUM_DIVS-1):
-    start_candidate = int((i+1) * len(lines) / NUM_DIVS)
-    #print(int(start_candidate))
-    while(True):
+    for i in range(NUM_DIVS-1):
+        start_candidate = int((i+1) * len(lines) / NUM_DIVS)
+        #print(int(start_candidate))
+        while(True):
         #print(str(start_candidate) + ": " + str(check_line(lines[start_candidate])) + "," + str(check_line(lines[start_candidate+1]) ))
-        if((check_line(lines[start_candidate]) == 3) and (check_line(lines[start_candidate+1]) == 3)):
-            div_points.append(start_candidate+1)
-            break
-        elif((check_line(lines[start_candidate]) == 2) and (check_line(lines[start_candidate+1]) == 3)):
-            div_points.append(start_candidate+1)
-            break
-        else:
-            start_candidate += 1
-div_points.append(len(lines))
+            if((check_line(lines[start_candidate]) == 3) and (check_line(lines[start_candidate+1]) == 3)):
+                div_points.append(start_candidate+1)
+                break
+            elif((check_line(lines[start_candidate]) == 2) and (check_line(lines[start_candidate+1]) == 3)):
+                div_points.append(start_candidate+1)
+                break
+            else:
+                start_candidate += 1
+    div_points.append(len(lines))
 print(div_points)
 
 file1.close()
@@ -109,7 +116,8 @@ def process_data(thread_id, file_name, idx_range):
     file1 = open(base_dir + file_name, 'r')
     
     lines = file1.readlines() 
-    lines = lines[LINE_START:LINE_END+1]
+    if use_time_tick:
+        lines = lines[LINE_START:LINE_END+1]
     lines = lines[idx_range[0]:idx_range[1]]
     
     mem_rd_cnt = 0
@@ -127,6 +135,8 @@ def process_data(thread_id, file_name, idx_range):
 
     ready_to_push = False
     inst_info = InstInfo()
+    cur_ins = ''
+    
     print("# of lines: %d"%len(lines))
     for i in range(len(lines)):
         if(i % int(len(lines)/10) == 0):
@@ -143,6 +153,24 @@ def process_data(thread_id, file_name, idx_range):
         # First check whether it is ready to push ins
         if((line_type == 1) or (line_type == 3)):
             if(ready_to_push):
+                if(cur_ins == 'tilestored'):
+                    #TODO FIX HERE
+                    #assert(inst_info.num_st == 16)
+                    assert(inst_info.mem_write_size == 255)
+                    inst_info.mem_write_size = np.uint8(64)
+                    # This instruction will generate 16 uops, and each uop will load 64 bytes.
+                    inst_info.num_st = 1
+                    # STRINGOP
+                    # inst_info.opcode = np.uint8(76)
+                    inst_info.opcode = np.uint8(106) # For AMX_TILE_MEM
+                    
+                    
+                    stride = inst_info.st_vaddr2 - inst_info.st_vaddr
+                    #print('tilestored addr with %x, stride %d'%(inst_info.st_vaddr, stride))
+                    
+                    #inst_info.ld_vaddr1 = np.uint64(num)                
+                    inst_info.ld_vaddr2 = np.uint64(stride)
+                
                 # ? bool B uint8 Q uint64
                 
                 #print(struct.calcsize('BBBBBBBBBBBBBBBBBB?B???BBQQQQQBB??'))
@@ -167,13 +195,7 @@ def process_data(thread_id, file_name, idx_range):
                 #           00000003_8031c0a0_ffffffff_ffffffff = *(UINT19456*)0x00007ffc8322ca40
             read_addr = lines[i].replace(' ', '').split("=")[1] 
             
-            #print(read_addr)
             assert(read_addr[:6] == '*(UINT')
-            #assert(line[3][:11] == '*(UINT128*)'
-            #        or line[3][:10] == '*(UINT64*)' or line[3][:10] == '*(UINT32*)'
-            #        or line[3][:10] == '*(UINT16*)' or line[3][:9] == '*(UINT8*)')
-            
-            # TODO Fix here
             num = int(read_addr.split(')')[1], 16)
             
             if(inst_info.num_ld == 0):
@@ -193,10 +215,13 @@ def process_data(thread_id, file_name, idx_range):
                 #print(line)
                 #print(inst_info.num_ld)
                 size = get_data_size(read_addr)
-                inst_info.mem_read_size += size
+                
+                # Check for overflow
                 if(int(inst_info.mem_read_size) + int(size) > 255):
                     #print('Check here')
-                    inst_info.mem_read_size = 255
+                    inst_info.mem_read_size = np.uint8(255)
+                else:
+                    inst_info.mem_read_size += size
                 # TODO
                 # We need to fix here.
                 # tileload loads 16*512 bytes to tmm register.
@@ -213,11 +238,30 @@ def process_data(thread_id, file_name, idx_range):
             line = lines[i].split(" ")
             assert(line[0] == 'Write')
             addr = int(line[1].split(')')[1], 16)
-            inst_info.has_st = bool(True)
-            inst_info.st_vaddr = addr
-            inst_info.mem_write_size = get_data_size(line[1])
+
+            if(inst_info.has_st is True):
+                size = get_data_size(line[1])
+                # Check for overflow
+                if(int(inst_info.mem_write_size) + int(size) > 255):
+                    #print('Check here')
+                    inst_info.mem_write_size = np.uint8(255)
+                else:
+                    inst_info.mem_write_size += np.uint8(size)
+                
+                if(inst_info.num_st == 1):
+                    inst_info.st_vaddr2 = addr
+                
+                inst_info.num_st += np.uint8(1)
+                
+            else:
+                inst_info.has_st = bool(True)
+                inst_info.st_vaddr = addr
+                inst_info.mem_write_size = get_data_size(line[1])
+                inst_info.num_st = np.uint8(1)
             
             mem_wt_cnt += 1
+            
+            
             
             if(i == len(lines)-1):
                 assert(ready_to_push)
@@ -273,16 +317,23 @@ def process_data(thread_id, file_name, idx_range):
                 ins_parts[-1] = ins_parts[-1][:-1]
             # ['INS', '0x00007fcc8010e790', 'BASE', 'mov', 'rax,', 'qword', 'ptr', '[rdx+0x8]']
             
-            if(ins_parts[3] == 'tileloadd'):
-                # print('tileloadd')
+            cur_ins = ins_parts[3]
+            
+            if(cur_ins == 'tileloadd'):
+                #print(inst_info.num_ld)
+                #TODO FIX HERE
+                #assert(inst_info.num_ld == 16)
+                assert(inst_info.mem_read_size == 255)
                 inst_info.mem_read_size = np.uint8(64)
                 # This instruction will generate 16 uops, and each uop will load 64 bytes.
                 inst_info.num_ld = 1
                 # STRINGOP
                 # inst_info.opcode = np.uint8(76)
                 inst_info.opcode = np.uint8(106) # For AMX_TILE_MEM
-                #inst_info.ld_vaddr1 = np.uint64(num)                
-                inst_info.ld_vaddr2 = np.uint64(0)
+                
+                stride = inst_info.ld_vaddr2 - inst_info.ld_vaddr1
+                #print('tileload addr with %x, stride %d'%(inst_info.ld_vaddr1, stride))                
+                inst_info.ld_vaddr2 = np.uint64(stride)
             
             
             tmp_parts = ins_parts
@@ -363,7 +414,7 @@ def process_data(thread_id, file_name, idx_range):
 processes = []
 # Create new processes
 for i in range(NUM_DIVS):
-    if(True):
+    if(i==0):
         process = multiprocessing.Process(target=process_data, args=(i, file_name, (div_points[i], div_points[i+1])))
         processes.append(process)
         process.start()

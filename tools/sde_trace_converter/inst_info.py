@@ -29,6 +29,10 @@ class InstInfo:
     rep_dir = bool(False)                # 1 bit
     actually_taken = bool(False)         # 1 ibt
     
+    # added for TILESTORE
+    num_st = np.uint8(0)
+    st_vaddr2 = np.uint64(0)
+    
     def init_ins(self):
         self.num_read_regs = np.uint8(0)    # 3-bits
         self.num_dest_regs = np.uint8(0)    # 3-bits
@@ -56,6 +60,10 @@ class InstInfo:
         self.mem_write_size = np.uint8(0)    # 8 bit
         self.rep_dir = bool(False)                # 1 bit
         self.actually_taken = bool(False)         # 1 ibt
+        
+        # added for TILESTORE
+        self.num_st = np.uint8(0)
+        self.st_vaddr2 = np.uint64(0) 
     
     def get_macsim_ins(self):
         info = struct.pack('BBBBBBBBBBBBBBBBBB?B???BBQQQQQBB??', 
