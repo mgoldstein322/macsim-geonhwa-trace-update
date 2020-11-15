@@ -113,6 +113,11 @@ static Uop_LatencyBinding_Init uop_latencybinding_init_x86_coffee_lake[] = {
 #include "../def/uoplatency_x86_coffee_lake.def"
 };
 
+static Uop_LatencyBinding_Init uop_latencybinding_init_x86_spr[] = {
+#define DEFUOP(A, B) {A, #A, B},
+#include "../def/uoplatency_x86_spr.def"
+};
+
 static Uop_LatencyBinding_Init uop_latencybinding_init_ptx[] = {
 #define DEFUOP(A, B) {A, #A, B},
 #include "../def/uoplatency_ptx580.def"
@@ -186,6 +191,18 @@ exec_c::exec_c(EXEC_INTERFACE_PARAMS(), macsim_c* simBase)
             uop_latencybinding_init_x86_coffee_lake[ii].m_latency;
         }
         break;
+      case LATENCY_SPR:
+        report("UOP latency mapped to SPR");
+        latency_array_size =
+          (sizeof uop_latencybinding_init_x86_spr /
+           sizeof(uop_latencybinding_init_x86_spr[0]));
+
+        for (int ii = 0; ii < latency_array_size; ++ii) {
+          m_latency[uop_latencybinding_init_x86_spr[ii].uop_type_s] =
+            uop_latencybinding_init_x86_spr[ii].m_latency;
+        }
+        break;
+
       default:
         report("UOP latency mapped to Sandy Bridge");
         latency_array_size = (sizeof uop_latencybinding_init_x86 /
@@ -222,7 +239,13 @@ int exec_c::get_latency(Uop_Type uop_type) {
   if (*m_simBase->m_knobs->KNOB_ONE_CYCLE_EXEC) {
     return 1;
   }
-
+  if(uop_type == UOP_AMX_COMPUTE_BF16){
+    DEBUG_CORE(m_core_id,
+             "UOP_AMX_COMPUTE_BF16 latency: %d\n",
+             m_latency[uop_type]
+    );
+    return *m_simBase->m_knobs->KNOB_AMX_COMPUTE_BF16_LATENCY;
+  }
   // otherwise return original latency
   return m_latency[uop_type];
 }
@@ -658,16 +681,30 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
                static_cast<int>(*m_simBase->m_knobs->KNOB_EXEC_RETIRE_LATENCY));
     uop->m_done_cycle = m_cur_core_cycle + max_latency;
   }
-
-  DEBUG_CORE(
+  
+  if(uop_type == UOP_AMX_COMPUTE_BF16){
+    DEBUG_CORE(
     m_core_id,
-    "done_exec m_core_id:%d thread_id:%d core_cycle_count:%llu uop_num:%llu"
+    "UOP_AMX_COMPUTE_BF16 done_exec m_core_id:%d thread_id:%d core_cycle_count:%llu uop_num:%llu"
     " inst_num:%llu sched_cycle:%llu exec_cycle:%llu uop->done_cycle:%llu "
-    "inst_count:%llu uop->dcmiss:%d uop_latency:%d done_cycle:%llu pc:0x%llx\n",
+    "inst_count:%llu uop->dcmiss:%d uop_latency:%d done_cycle:%llu pc:0x%llx "
+    "uop_type: %d\n",
     m_core_id, uop->m_thread_id, m_cur_core_cycle, uop->m_uop_num,
     uop->m_inst_num, uop->m_sched_cycle, uop->m_exec_cycle, uop->m_done_cycle,
     uop->m_inst_num, uop->m_uop_info.m_dcmiss, uop_latency, uop->m_done_cycle,
-    uop->m_pc);
+    uop->m_pc, uop->m_uop_type);
+  }
+  else
+    DEBUG_CORE(
+      m_core_id,
+      "done_exec m_core_id:%d thread_id:%d core_cycle_count:%llu uop_num:%llu"
+      " inst_num:%llu sched_cycle:%llu exec_cycle:%llu uop->done_cycle:%llu "
+      "inst_count:%llu uop->dcmiss:%d uop_latency:%d done_cycle:%llu pc:0x%llx "
+      "uop_type: %d\n",
+      m_core_id, uop->m_thread_id, m_cur_core_cycle, uop->m_uop_num,
+      uop->m_inst_num, uop->m_sched_cycle, uop->m_exec_cycle, uop->m_done_cycle,
+      uop->m_inst_num, uop->m_uop_info.m_dcmiss, uop_latency, uop->m_done_cycle,
+      uop->m_pc, uop->m_uop_type);
 
   // branch execution
   if (uop->m_cf_type) {

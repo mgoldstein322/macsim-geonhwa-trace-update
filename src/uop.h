@@ -116,6 +116,8 @@ typedef enum Uop_Type_enum {
   // SIMD instructions for Intel GPU
   UOP_SIMD,
 
+  UOP_AMX_COMPUTE_BF16,
+
   // other instructions
   UOP_AES,  //!< AES enctyption
   UOP_PCLMUL,  //!< carryless multiplication

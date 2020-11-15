@@ -139,7 +139,9 @@ static std::map<std::string, latency_map> string_to_latency_map = {
   {"x86", LATENCY_DEFAULT},
   {"skylake", LATENCY_SKYLAKE},
   {"skylake_x", LATENCY_SKYLAKE_X},
-  {"coffee_lake", LATENCY_COFFEE_LAKE}};
+  {"coffee_lake", LATENCY_COFFEE_LAKE},
+  {"spr", LATENCY_SPR}
+  };
 
 // apply new value to the knob
 void KnobsContainer::applyValuesToKnobs(

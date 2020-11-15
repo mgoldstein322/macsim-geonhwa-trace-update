@@ -5,7 +5,8 @@
 all_knobs_c::all_knobs_c() {
 
 	KNOB_NUM_TILE_UOPS = new KnobTemplate< int > ("num_tile_uops", 1);
-	
+	KNOB_AMX_COMPUTE_BF16_LATENCY = new KnobTemplate< int > ("amx_compute_bf16_latency", 100);
+
 
 	// =========== ../def/bp.param.def ===========
 	KNOB_BP_HIST_LENGTH = new KnobTemplate< uns > ("bp_hist_length", 5);
@@ -581,6 +582,7 @@ all_knobs_c::all_knobs_c() {
 
 all_knobs_c::~all_knobs_c() {
 	delete KNOB_NUM_TILE_UOPS;
+	delete KNOB_AMX_COMPUTE_BF16_LATENCY;
 	delete KNOB_BP_HIST_LENGTH;
 	delete KNOB_PHT_CTR_BITS;
 	delete KNOB_BP_DIR_MECH;
@@ -1119,7 +1121,7 @@ all_knobs_c::~all_knobs_c() {
 void all_knobs_c::registerKnobs(KnobsContainer *container) {
 	
 	container->insertKnob( KNOB_NUM_TILE_UOPS );
-
+	container->insertKnob( KNOB_AMX_COMPUTE_BF16_LATENCY );
 	// =========== ../def/bp.param.def ===========
 	container->insertKnob( KNOB_BP_HIST_LENGTH );
 	container->insertKnob( KNOB_PHT_CTR_BITS );

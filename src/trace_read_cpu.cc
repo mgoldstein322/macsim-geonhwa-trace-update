@@ -915,34 +915,36 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
 
         trace_uop[dyn_uop_counter - 1]->m_npc = pi->m_instruction_addr;
 
-        ASSERT(num_uop == 1);
-        for (ii = 0; ii < num_uop; ++ii) {
-          // can't skip when ii = 0; because this routine is repeating ...
-          key_addr = ((pi->m_instruction_addr << 3) + ii);
-          info = htable->hash_table_access_create(key_addr, &new_entry);
+        //ASSERT(num_uop == 1);
+        //for (ii = 0; ii < num_uop; ++ii) {
+        
+        // can't skip when ii = 0; because this routine is repeating ...
+        key_addr = ((pi->m_instruction_addr << 3));
+        info = htable->hash_table_access_create(key_addr, &new_entry);
 
-          if(!(jj == 0 && ii == 0))
-            info->m_trace_info.m_bom = false;
-          info->m_trace_info.m_eom = false;
+        if(!(jj == 0 && ii == 0))
+          info->m_trace_info.m_bom = false;
+        info->m_trace_info.m_eom = false;
 
-          ASSERT(!new_entry);
+        ASSERT(!new_entry);
 
-          // add dynamic information
-          DEBUG_CORE(
-          core_id,
-          "AMX_TILE rep_offset: %d\n",
-          rep_offset
-          );
+        // add dynamic information
+        DEBUG_CORE(
+        core_id,
+        "AMX_TILE rep_offset: %d\n",
+        rep_offset
+        );
 
-          convert_dyn_uop(info, pi, trace_uop[dyn_uop_counter], rep_offset,
-                          core_id);
+        convert_dyn_uop(info, pi, trace_uop[dyn_uop_counter], rep_offset,
+                        core_id);
 
-          trace_uop[dyn_uop_counter]->m_mem_size = 64;
-          trace_uop[dyn_uop_counter]->m_info = info;
-          trace_uop[dyn_uop_counter]->m_eom = 0;
-          trace_uop[dyn_uop_counter]->m_addr = pi->m_instruction_addr;
-          ++dyn_uop_counter;
-        }
+        trace_uop[dyn_uop_counter]->m_mem_size = 64;
+        trace_uop[dyn_uop_counter]->m_info = info;
+        trace_uop[dyn_uop_counter]->m_eom = 0;
+        trace_uop[dyn_uop_counter]->m_addr = pi->m_instruction_addr;
+        ++dyn_uop_counter;
+        
+        //}
         DEBUG_CORE(
           core_id,
           "AMX_TILE_MEM core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d dyn_uop_counter:%d ii:%d\n",
@@ -1032,6 +1034,17 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
       }
     }
       
+  }
+  if(pi->m_opcode == AMX_TILE_COMPUTE_BF16){
+    first_info->m_table_info->m_op_type = UOP_AMX_COMPUTE_BF16;
+    trace_uop[0]->m_mem_type = NOT_MEM;
+    trace_uop[0]->m_op_type = UOP_AMX_COMPUTE_BF16;
+    DEBUG_CORE(
+            core_id,
+            "AMX_TILE_COMPUTE LOAD set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
+            core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
+            static_cast<int>(pi->m_opcode),
+            pi->m_mem_read_size, dyn_uop_counter, first_info->m_trace_info.m_num_uop);
   }
   return first_info;
 }
@@ -1255,7 +1268,17 @@ bool cpu_decoder_c::get_uops_from_traces(int core_id, uop_c *uop,
   /// Set up actual uop data structure
   ///
   uop->m_opcode = trace_uop->m_opcode;
-  uop->m_uop_type = info->m_table_info->m_op_type;
+  // Workaround
+  if(uop->m_opcode == AMX_TILE_COMPUTE_BF16){
+    DEBUG_CORE(core_id,
+               "SET AMX_COMPUTE core_id:%d thread_id:%d inst_num:%lld uop_num:%lld "
+               "\n",
+               core_id, sim_thread_id, uop->m_inst_num, uop->m_uop_num
+               );
+    uop->m_uop_type = UOP_AMX_COMPUTE_BF16;
+  }
+  else
+    uop->m_uop_type = info->m_table_info->m_op_type;
   uop->m_cf_type = info->m_table_info->m_cf_type;
   uop->m_mem_type = info->m_table_info->m_mem_type;
   ASSERT(uop->m_mem_type >= 0 && uop->m_mem_type < NUM_MEM_TYPES);
@@ -1373,12 +1396,29 @@ bool cpu_decoder_c::get_uops_from_traces(int core_id, uop_c *uop,
   /// GPU simulation : handling uncoalesced accesses
   /// removed
   ///
+  if(uop->m_opcode == 105){
+    DEBUG_CORE(
+    uop->m_core_id,
+    "AMX_MEM new uop: uop_num:%lld vaddr:%llx inst_num:%lld thread_id:%d unique_num:%lld \n",
+    uop->m_uop_num, uop->m_vaddr, uop->m_inst_num, uop->m_thread_id, uop->m_unique_num);
+  } 
   if(uop->m_opcode == 106){
     DEBUG_CORE(
     uop->m_core_id,
-    "AMX new uop: uop_num:%lld vaddr:%llx inst_num:%lld thread_id:%d unique_num:%lld \n",
+    "AMX_COMPUTE new uop: uop_num:%lld vaddr:%llx inst_num:%lld thread_id:%d unique_num:%lld \n",
     uop->m_uop_num, uop->m_vaddr, uop->m_inst_num, uop->m_thread_id, uop->m_unique_num);
-  } // AMX_TILE
+    DEBUG_CORE(uop->m_core_id,
+             "uop_num:%llu num_srcs:%d  trace_uop->num_src_regs:%d  "
+             "num_dsts:%d num_sending_uop:%d "
+             "pc:0x%llx dir:%d \n",
+             uop->m_uop_num, uop->m_num_srcs, trace_uop->m_num_src_regs,
+             uop->m_num_dests, thread_trace_info->m_num_sending_uop, uop->m_pc,
+             uop->m_dir);
+    DEBUG("uop_num:%lld src_info[%d]:%d\n", uop->m_uop_num, 0, uop->m_src_info[0]);
+    DEBUG("uop_num:%lld dst_info[%d]:%d\n", uop->m_uop_num, 0, uop->m_dest_info[0]);
+  }
+  
+  // AMX_TILE
   DEBUG_CORE(
     uop->m_core_id,
     "new uop: uop_num:%lld inst_num:%lld thread_id:%d unique_num:%lld \n",
@@ -1397,6 +1437,8 @@ void cpu_decoder_c::init_pin_convert(void) {
   // init conversion based on knob value; this is only how they will be mapped and is independent of the UOP latency
   // values - Michael
   switch (lat_map) {
+    case LATENCY_SPR:
+      m_int_uop_table[AMX_TILE_COMPUTE_BF16] = UOP_AMX_COMPUTE_BF16;
     case LATENCY_SKYLAKE:
     case LATENCY_COFFEE_LAKE:
       m_int_uop_table[XED_CATEGORY_INVALID] = UOP_INV;
