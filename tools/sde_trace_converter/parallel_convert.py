@@ -29,6 +29,16 @@ parser.add_argument(
     nargs='?',
     )
 
+parser.add_argument(
+    '-t', '--num_threads',
+    help='num_threads',
+    type=int,
+    nargs='?',
+    const=1,
+    default=1,
+    metavar='num_threads',
+    )
+
 # /home/geonhwajeong/sde-traces/spr/spr-32-32-32.txt
 args = parser.parse_args()
 
@@ -40,8 +50,11 @@ if(args.input_file == None):
 
 # Please change the followings!!!
 
+OPCODE_AMX_TILE_MEM = 105
+OPCODE_AMX_TILE_COMPUTE_BF16 = 106
+
 NUM_SIM_LINES = args.num_ins
-NUM_DIVS = 8
+NUM_DIVS = args.num_threads
 
 #ARCH = 'spr'
 full_path = args.input_file
@@ -88,7 +101,7 @@ print('Check the first line\n %s'%(lines[0]))
 # n_0, n_1, ... , n_8
 # 0~n_0-1, n_0~n_1 -1 ... , n_8 ~ last
 div_points = [0]
-MANUAL = True
+MANUAL = False
 if MANUAL:
     div_points = [0, 5115177]
 if MANUAL is False:
@@ -153,6 +166,16 @@ def process_data(thread_id, file_name, idx_range):
         # First check whether it is ready to push ins
         if((line_type == 1) or (line_type == 3)):
             if(ready_to_push):
+                if(cur_ins == 'tileloadd'):
+                    assert(inst_info.num_dest_regs == 1)
+
+                if(cur_ins == 'tdpbf16ps'):
+                    assert(inst_info.num_read_regs == 3)
+                    assert(inst_info.num_dest_regs == 1)
+                    #dst_reg = reg_states[j].split('=')[0]
+                    #inst_info.dst[j] = np.uint8(constant.regs[dst_reg])
+                    #dst_regs.append(dst_reg)
+
                 if(cur_ins == 'tilestored'):
                     #TODO FIX HERE
                     #assert(inst_info.num_st == 16)
@@ -162,7 +185,7 @@ def process_data(thread_id, file_name, idx_range):
                     inst_info.num_st = 1
                     # STRINGOP
                     # inst_info.opcode = np.uint8(76)
-                    inst_info.opcode = np.uint8(106) # For AMX_TILE_MEM
+                    inst_info.opcode = np.uint8(OPCODE_AMX_TILE_MEM) # For AMX_TILE_MEM
                     
                     
                     stride = inst_info.st_vaddr2 - inst_info.st_vaddr
@@ -295,7 +318,9 @@ def process_data(thread_id, file_name, idx_range):
             # instead, they are in the next line
             reg_states = lines[i].split('|')
             assert(len(reg_states) < 3)
+            
             dst_regs = []
+            
             if(len(reg_states) == 2):
                 reg_states = reg_states[1]
                 reg_states = reg_states.replace(' ', '')
@@ -329,18 +354,39 @@ def process_data(thread_id, file_name, idx_range):
                 inst_info.num_ld = 1
                 # STRINGOP
                 # inst_info.opcode = np.uint8(76)
-                inst_info.opcode = np.uint8(106) # For AMX_TILE_MEM
+                inst_info.opcode = np.uint8(OPCODE_AMX_TILE_MEM) # For AMX_TILE_MEM
                 
                 stride = inst_info.ld_vaddr2 - inst_info.ld_vaddr1
                 #print('tileload addr with %x, stride %d'%(inst_info.ld_vaddr1, stride))                
                 inst_info.ld_vaddr2 = np.uint64(stride)
             
+            if(cur_ins == 'tdpbf16ps'):
+                inst_info.opcode = np.uint8(OPCODE_AMX_TILE_COMPUTE_BF16) # For AMX_TILE_MEM
+                #print('Detect tdpbf16ps')
+                # TODO Set src/dst registers
             
             tmp_parts = ins_parts
             if(ins_parts[3] in constant.prefixes):
                 ins_parts = ins_parts[5:]
             else:
                 ins_parts = ins_parts[4:]
+
+            # Set dest regs for tdpbf16ps
+            if(cur_ins == 'tdpbf16ps'):
+                assert(len(ins_parts) == 3)
+                dst_reg = ins_parts[0]
+                inst_info.dst[0] = np.uint8(constant.regs[dst_reg])
+                dst_regs.append(dst_reg)
+                inst_info.num_dest_regs = np.uint8(len(dst_regs))
+
+            # Set dest regs for tileloadd
+            if(cur_ins == 'tileloadd'):
+                assert(len(ins_parts) == 3)                
+                dst_reg = ins_parts[0]
+                inst_info.dst[0] = np.uint8(constant.regs[dst_reg])
+                dst_regs.append(dst_reg)
+                inst_info.num_dest_regs = np.uint8(len(dst_regs))
+
 
             src_regs = []
             for part in ins_parts:
@@ -379,14 +425,23 @@ def process_data(thread_id, file_name, idx_range):
                         print(part)
                         print("New register: " + part)
                         assert(False)
-                    elif(part in constant.regs.keys() and (not part in dst_regs) and (not part in src_regs)):
-                        src_regs.append(part)
-                        
+                    
+                    elif(part in constant.regs.keys() and (not part in src_regs)):
+                        # tdpbf16ps tmm0, tmm1, tmm2 -> tmm0 is both read and written
+
+                        if(cur_ins == 'tdpbf16ps'):
+                            src_regs.append(part)
+                        else:
+                            if(not part in dst_regs):
+                                src_regs.append(part)
+
+  
+
             # TODO Update for tmm registers
-            inst_info.num_src_regs = np.uint8(len(src_regs))
+            inst_info.num_read_regs = np.uint8(len(src_regs))
             for j in range(len(src_regs)):
-                inst_info.dst[j] = np.uint8(constant.regs[src_regs[j]])
-            
+                inst_info.src[j] = np.uint8(constant.regs[src_regs[j]])
+
             ready_to_push = True
             if(i == len(lines)-1):
                 assert(ready_to_push)
@@ -414,7 +469,9 @@ def process_data(thread_id, file_name, idx_range):
 processes = []
 # Create new processes
 for i in range(NUM_DIVS):
-    if(i==0):
+    #if True:
+    
+    if(i in {0, 1, 4, 5, 6, 7, 8}):
         process = multiprocessing.Process(target=process_data, args=(i, file_name, (div_points[i], div_points[i+1])))
         processes.append(process)
         process.start()
