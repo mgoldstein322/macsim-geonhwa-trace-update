@@ -6,6 +6,17 @@ all_knobs_c::all_knobs_c() {
 
 	KNOB_NUM_TILE_UOPS = new KnobTemplate< int > ("num_tile_uops", 1);
 	KNOB_AMX_COMPUTE_BF16_LATENCY = new KnobTemplate< int > ("amx_compute_bf16_latency", 100);
+	
+	KNOB_AMX_WL_PIPE = new KnobTemplate< bool > ("amx_pipe", false);
+	KNOB_AMX_WL_BP = new KnobTemplate< bool > ("amx_wl_bp", false);
+	KNOB_AMX_WL_S = new KnobTemplate< bool > ("amx_wl_s", false);
+
+	KNOB_AMX_WL_LATENCY = new KnobTemplate< int > ("amx_wl_latency", 32);
+	KNOB_AMX_FF_LATENCY = new KnobTemplate< int > ("amx_ff_latency", 16);
+	KNOB_AMX_FS_LATENCY = new KnobTemplate< int > ("amx_fs_latency", 32);
+	KNOB_AMX_DR_LATENCY = new KnobTemplate< int > ("amx_dr_latency", 16);
+
+	KNOB_AMX_CYCLE_SCALE = new KnobTemplate< int > ("amx_cycle_scale", 4);
 
 
 	// =========== ../def/bp.param.def ===========
@@ -42,6 +53,7 @@ all_knobs_c::all_knobs_c() {
 	KNOB_MEM_ALLOCQ_INDEX = new KnobTemplate< int > ("miaq_index", 1);
 	KNOB_FLOAT_ALLOCQ_INDEX = new KnobTemplate< int > ("fiaq_index", 2);
 	KNOB_SIMD_ALLOCQ_INDEX = new KnobTemplate< int > ("siaq_index", 3);
+	KNOB_TILE_ALLOCQ_INDEX = new KnobTemplate< int > ("tiaq_index", 4);
 	KNOB_ONE_CYCLE_EXEC = new KnobTemplate< bool > ("one_cycle_exec", 0);
 	KNOB_MAX_INSTS = new KnobTemplate< uns32 > ("max_insts", 1000);
 	KNOB_SIM_CYCLE_COUNT = new KnobTemplate< uns32 > ("sim_cycle_count", 1000000);
@@ -583,6 +595,17 @@ all_knobs_c::all_knobs_c() {
 all_knobs_c::~all_knobs_c() {
 	delete KNOB_NUM_TILE_UOPS;
 	delete KNOB_AMX_COMPUTE_BF16_LATENCY;
+	delete KNOB_AMX_WL_BP;
+	delete KNOB_AMX_WL_S;
+
+	delete KNOB_AMX_WL_PIPE;
+	delete KNOB_AMX_WL_LATENCY ;
+	delete KNOB_AMX_FF_LATENCY;
+	delete KNOB_AMX_FS_LATENCY;
+	delete KNOB_AMX_DR_LATENCY;
+
+	delete KNOB_AMX_CYCLE_SCALE;
+
 	delete KNOB_BP_HIST_LENGTH;
 	delete KNOB_PHT_CTR_BITS;
 	delete KNOB_BP_DIR_MECH;
@@ -613,6 +636,7 @@ all_knobs_c::~all_knobs_c() {
 	delete KNOB_MEM_ALLOCQ_INDEX;
 	delete KNOB_FLOAT_ALLOCQ_INDEX;
 	delete KNOB_SIMD_ALLOCQ_INDEX;
+	delete KNOB_TILE_ALLOCQ_INDEX;
 	delete KNOB_ONE_CYCLE_EXEC;
 	delete KNOB_MAX_INSTS;
 	delete KNOB_SIM_CYCLE_COUNT;
@@ -1122,6 +1146,14 @@ void all_knobs_c::registerKnobs(KnobsContainer *container) {
 	
 	container->insertKnob( KNOB_NUM_TILE_UOPS );
 	container->insertKnob( KNOB_AMX_COMPUTE_BF16_LATENCY );
+	container->insertKnob( KNOB_AMX_WL_LATENCY );
+	container->insertKnob( KNOB_AMX_FF_LATENCY );
+	container->insertKnob( KNOB_AMX_FS_LATENCY );
+	container->insertKnob( KNOB_AMX_DR_LATENCY );
+	container->insertKnob( KNOB_AMX_WL_PIPE );
+	container->insertKnob( KNOB_AMX_WL_BP );
+	container->insertKnob( KNOB_AMX_WL_S );
+	container->insertKnob( KNOB_AMX_CYCLE_SCALE);
 	// =========== ../def/bp.param.def ===========
 	container->insertKnob( KNOB_BP_HIST_LENGTH );
 	container->insertKnob( KNOB_PHT_CTR_BITS );
@@ -1156,6 +1188,7 @@ void all_knobs_c::registerKnobs(KnobsContainer *container) {
 	container->insertKnob( KNOB_MEM_ALLOCQ_INDEX );
 	container->insertKnob( KNOB_FLOAT_ALLOCQ_INDEX );
 	container->insertKnob( KNOB_SIMD_ALLOCQ_INDEX );
+	container->insertKnob( KNOB_TILE_ALLOCQ_INDEX );
 	container->insertKnob( KNOB_ONE_CYCLE_EXEC );
 	container->insertKnob( KNOB_MAX_INSTS );
 	container->insertKnob( KNOB_SIM_CYCLE_COUNT );

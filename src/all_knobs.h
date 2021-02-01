@@ -31,7 +31,14 @@ class all_knobs_c {
 	// Added for AMX instructions. One tileloadd instruction should be able to load 1KB.
 		KnobTemplate< int >* KNOB_NUM_TILE_UOPS;
 		KnobTemplate< int >* KNOB_AMX_COMPUTE_BF16_LATENCY;
-		
+		KnobTemplate< bool >* KNOB_AMX_WL_BP;
+		KnobTemplate< bool >* KNOB_AMX_WL_S;
+		KnobTemplate< bool >* KNOB_AMX_WL_PIPE;
+		KnobTemplate< int >* KNOB_AMX_WL_LATENCY;
+		KnobTemplate< int >* KNOB_AMX_FF_LATENCY;
+		KnobTemplate< int >* KNOB_AMX_FS_LATENCY;
+		KnobTemplate< int >* KNOB_AMX_DR_LATENCY;
+		KnobTemplate< int >* KNOB_AMX_CYCLE_SCALE;
 	// =========== ../def/bp.param.def ===========
 		KnobTemplate< uns >* KNOB_BP_HIST_LENGTH;
 		KnobTemplate< uns >* KNOB_PHT_CTR_BITS;
@@ -66,6 +73,7 @@ class all_knobs_c {
 		KnobTemplate< int >* KNOB_MEM_ALLOCQ_INDEX;
 		KnobTemplate< int >* KNOB_FLOAT_ALLOCQ_INDEX;
 		KnobTemplate< int >* KNOB_SIMD_ALLOCQ_INDEX;
+		KnobTemplate< int >* KNOB_TILE_ALLOCQ_INDEX;
 		KnobTemplate< bool >* KNOB_ONE_CYCLE_EXEC;
 		KnobTemplate< uns32 >* KNOB_MAX_INSTS;
 		KnobTemplate< uns32 >* KNOB_SIM_CYCLE_COUNT;
