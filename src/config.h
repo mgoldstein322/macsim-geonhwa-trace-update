@@ -369,7 +369,8 @@ POSSIBILITY OF SUCH DAMAGE.
   m_max_port[gen_ALLOCQ] = int_sched_rate;                                 \
   m_max_port[mem_ALLOCQ] = mem_sched_rate;                                 \
   m_max_port[fp_ALLOCQ] = fp_sched_rate;                                   \
-  m_max_port[simd_ALLOCQ] = simd_sched_rate;
+  m_max_port[simd_ALLOCQ] = simd_sched_rate;                               \
+  m_max_port[tile_ALLOCQ] = 1;
 
 #define SCHED_CONFIG()                                                         \
   uns16 int_sched_size = 0;                                                    \
@@ -426,15 +427,19 @@ POSSIBILITY OF SUCH DAMAGE.
   m_sched_size[mem_ALLOCQ] = mem_sched_size;                                   \
   m_sched_size[fp_ALLOCQ] = fp_sched_size;                                     \
   m_sched_size[simd_ALLOCQ] = simd_sched_size;                                 \
+  m_sched_size[tile_ALLOCQ] = simd_sched_size;                                 \
   m_sched_rate[gen_ALLOCQ] = int_sched_rate;                                   \
   m_sched_rate[mem_ALLOCQ] = mem_sched_rate;                                   \
   m_sched_rate[fp_ALLOCQ] = fp_sched_rate;                                     \
   m_sched_rate[simd_ALLOCQ] = simd_sched_rate;                                 \
+  m_sched_rate[tile_ALLOCQ] = simd_sched_rate;                                 \
                                                                                \
   m_num_per_sched[gen_ALLOCQ] = 0;                                             \
   m_num_per_sched[mem_ALLOCQ] = 0;                                             \
   m_num_per_sched[fp_ALLOCQ] = 0;                                              \
-  m_num_per_sched[simd_ALLOCQ] = 0;
+  m_num_per_sched[simd_ALLOCQ] = 0;                                            \
+  m_num_per_sched[tile_ALLOCQ] = 0;                                            
+
 
 #define FRONTEND_CONFIG()                                                      \
   switch (m_unit_type) {                                                       \

@@ -191,6 +191,11 @@ private:
   int m_max_port[max_ALLOCQ]; /**< maximum port */
   int m_port_used[max_ALLOCQ]; /**< number of currently used port */
   bool* m_bank_busy; /**< indicate dcache bank busy */
+  
+  Counter m_tmul_start_cycle = -1;
+  Counter m_tmul_done_cycle = -1;
+  bool m_tmul_weight_dirty = false;
+  uns16 m_cur_tmul_weight_reg = 255;
 
   macsim_c* m_simBase; /**< macsim_c base class for simulation globals */
 

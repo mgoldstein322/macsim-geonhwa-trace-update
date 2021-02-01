@@ -993,11 +993,13 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
   }
 
   ASSERT(num_uop > 0);
-  first_info->m_trace_info.m_num_uop = num_uop;
+  first_info->m_trace_info.m_num_uop = dyn_uop_counter;
+  //first_info->m_trace_info.m_num_uop = num_uop;
 
   if(pi->m_opcode == AMX_TILE_MEM){
     first_info->m_trace_info.m_num_uop = trace_uop[0]->m_rep_uop_num;
     if(pi->m_has_st){
+      info->m_table_info->m_mem_type = MEM_ST;
       DEBUG_CORE(
             core_id,
             "AMX_TILE_MEM STORE set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_write_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
@@ -1006,6 +1008,7 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
             pi->m_mem_write_size, dyn_uop_counter, first_info->m_trace_info.m_num_uop);
     }
     else{
+      info->m_table_info->m_mem_type = MEM_LD;
       DEBUG_CORE(
             core_id,
             "AMX_TILE_MEM LOAD set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
@@ -1014,6 +1017,17 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
             pi->m_mem_read_size, dyn_uop_counter, first_info->m_trace_info.m_num_uop);
     }
     for(ii = 0; ii < first_info->m_trace_info.m_num_uop; ii++){
+      for (jj = 0; jj < trace_uop[ii]->m_num_src_regs; ++jj) {
+        (trace_uop[ii])->m_srcs[jj].m_type = (Reg_Type)0;
+        (trace_uop[ii])->m_srcs[jj].m_id = pi->m_src[jj];
+        (trace_uop[ii])->m_srcs[jj].m_reg = pi->m_src[jj];
+      }
+      for (jj = 0; jj < trace_uop[ii]->m_num_dest_regs; ++jj) {
+        (trace_uop[ii])->m_dests[jj].m_type = (Reg_Type)0;
+        (trace_uop[ii])->m_dests[jj].m_id = pi->m_dst[jj];
+        (trace_uop[ii])->m_dests[jj].m_reg = pi->m_dst[jj];
+      }
+      
       if(pi->m_has_st)
         trace_uop[ii]->m_mem_type = MEM_ST;
       else
@@ -1276,6 +1290,7 @@ bool cpu_decoder_c::get_uops_from_traces(int core_id, uop_c *uop,
                core_id, sim_thread_id, uop->m_inst_num, uop->m_uop_num
                );
     uop->m_uop_type = UOP_AMX_COMPUTE_BF16;
+    uop->m_bogus = 0;
   }
   else
     uop->m_uop_type = info->m_table_info->m_op_type;
@@ -1401,6 +1416,8 @@ bool cpu_decoder_c::get_uops_from_traces(int core_id, uop_c *uop,
     uop->m_core_id,
     "AMX_MEM new uop: uop_num:%lld vaddr:%llx inst_num:%lld thread_id:%d unique_num:%lld \n",
     uop->m_uop_num, uop->m_vaddr, uop->m_inst_num, uop->m_thread_id, uop->m_unique_num);
+    uop->m_mem_type = trace_uop->m_mem_type;
+
   } 
   if(uop->m_opcode == 106){
     DEBUG_CORE(
