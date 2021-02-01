@@ -2,37 +2,39 @@ import struct
 import numpy as np
 
 class InstInfo:
-    num_read_regs = np.uint8(0)    # 3-bits
-    num_dest_regs = np.uint8(0)    # 3-bits
-    src = []
-    for _ in range(9):
-        src.append(np.uint8(0)) # increased in 2019 version // 6-bits * 4 // back to 8
-    dst = []
-    for _ in range(6):
-        dst.append(np.uint8(0)) # increased in 2019 version  6-bits * 4 // back to 8
-    cf_type = np.uint8(0)          # 4 bits
-    has_immediate = bool(False)       # 1bits
-    opcode = np.uint8(31)           # 6 bits
-    has_st = bool(False)                # 1 bit
-    is_fp = bool(False)                 # 1bit
-    write_flg = bool(False)             # 1bit
-    num_ld = np.uint8(0)           # 2bit
-    size = np.uint8(0)             # 5 bit
-    # **** dynamic ****
-    ld_vaddr1 = np.uint64(0)        # 4 bytes
-    ld_vaddr2 = np.uint64(0)        # 4 bytes
-    st_vaddr = np.uint64(0)         # 4 bytes
-    ins_addr = np.uint64(0) # ins_addr # 4 bytes
-    branch_target = np.uint64(0)    # not the dynamic info. static info  // 4 bytes
-    mem_read_size = np.uint8(0)     # 8 bit
-    mem_write_size = np.uint8(0)    # 8 bit
-    rep_dir = bool(False)                # 1 bit
-    actually_taken = bool(False)         # 1 ibt
-    
-    # added for TILESTORE
-    num_st = np.uint8(0)
-    st_vaddr2 = np.uint64(0)
-    
+    def __init__(self):
+        self.num_read_regs = np.uint8(0)    # 3-bits
+        self.num_dest_regs = np.uint8(0)    # 3-bits
+        self.src = []
+        for _ in range(9):
+            self.src.append(np.uint8(0)) # increased in 2019 version // 6-bits * 4 // back to 8
+        self.dst = []
+        for _ in range(6):
+            self.dst.append(np.uint8(0)) # increased in 2019 version  6-bits * 4 // back to 8
+        self.cf_type = np.uint8(0)          # 4 bits
+        self.has_immediate = bool(False)       # 1bits
+        self.opcode = np.uint8(31)           # 6 bits
+        self.has_st = bool(False)                # 1 bit
+        self.is_fp = bool(False)                 # 1bit
+        self.write_flg = bool(False)             # 1bit
+        self.num_ld = np.uint8(0)           # 2bit
+        self.size = np.uint8(0)             # 5 bit
+        # **** dynamic ****
+        self.ld_vaddr1 = np.uint64(0)        # 4 bytes
+        self.ld_vaddr2 = np.uint64(0)        # 4 bytes
+        self.st_vaddr = np.uint64(0)         # 4 bytes
+        self.ins_addr = np.uint64(0) # ins_addr # 4 bytes
+        self.branch_target = np.uint64(0)    # not the dynamic info. static info  // 4 bytes
+        self.mem_read_size = np.uint8(0)     # 8 bit
+        self.mem_write_size = np.uint8(0)    # 8 bit
+        self.rep_dir = bool(False)                # 1 bit
+        self.actually_taken = bool(False)         # 1 ibt
+        
+        # added for TILESTORE
+        self.num_st = np.uint8(0)
+        self.st_vaddr2 = np.uint64(0)
+    def test(self):
+        print(self.opcode)
     def init_ins(self):
         self.num_read_regs = np.uint8(0)    # 3-bits
         self.num_dest_regs = np.uint8(0)    # 3-bits
@@ -64,6 +66,37 @@ class InstInfo:
         # added for TILESTORE
         self.num_st = np.uint8(0)
         self.st_vaddr2 = np.uint64(0) 
+
+    # Copy ins from copy to this except inst
+    def copy_ins(self, tmp):
+        self.num_read_regs = tmp.num_read_regs    # 3-bits
+        self.num_dest_regs = tmp.num_dest_regs    # 3-bits
+        for i in range(9):
+            self.src[i] = tmp.src[i] # increased in 2019 version // 6-bits * 4 // back to 8
+        for i in range(6):
+            self.dst[i] = tmp.dst[i] # increased in 2019 version  6-bits * 4 // back to 8
+        self.cf_type = tmp.cf_type          # 4 bits
+        self.has_immediate = tmp.has_immediate       # 1bits
+        self.opcode = tmp.opcode           # 6 bits
+        self.has_st = tmp.has_st                # 1 bit
+        self.is_fp = tmp.is_fp                 # 1bit
+        self.write_flg = tmp.write_flg             # 1bit
+        self.num_ld = tmp.num_ld           # 2bit
+        self.size = tmp.size             # 5 bit
+        # **** dynamic ****
+        self.ld_vaddr1 = tmp.ld_vaddr1        # 4 bytes
+        self.ld_vaddr2 = tmp.ld_vaddr2        # 4 bytes
+        self.st_vaddr = tmp.st_vaddr         # 4 bytes
+        #self.instruction_addr = np.uint64(0) # 4 bytes DON'T CHANGE PC
+        self.branch_target = tmp.branch_target    # not the dynamic info. static info  // 4 bytes
+        self.mem_read_size = tmp.mem_read_size     # 8 bit
+        self.mem_write_size = tmp.mem_write_size    # 8 bit
+        self.rep_dir = tmp.rep_dir                # 1 bit
+        self.actually_taken = tmp.actually_taken         # 1 ibt
+        
+        # added for TILESTORE
+        self.num_st = tmp.num_st
+        self.st_vaddr2 = tmp.st_vaddr2 
     
     def get_macsim_ins(self):
         info = struct.pack('BBBBBBBBBBBBBBBBBB?B???BBQQQQQBB??', 

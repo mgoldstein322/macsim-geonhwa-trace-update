@@ -40,7 +40,12 @@ parser.add_argument(
     const=100,         # Default value if -t is supplied
     default=100,     # Default value if -t is not supplied
     metavar='num_sim_lines')
-
+parser.add_argument(
+    '-i', '--input_file',
+    help='absolute directory of the Intel SDE trace file',
+    type=str,
+    nargs='?',
+    )
 args = parser.parse_args()
 
 NUM_SIM_LINES = args.num_ins
@@ -96,11 +101,11 @@ def find_ins(ins_addr):
     file1.close()
     return line_nums
 
-tick_nums = find_ins('0x434780')
-print(tick_nums)
+#tick_nums = find_ins('0x434780')
+#print(tick_nums)
 
-LINE_START = tick_nums[2] + 23
-LINE_END = tick_nums[3]  - 1
+#LINE_START = tick_nums[2] + 23
+#LINE_END = tick_nums[3]  - 1
     
 
 def is_immediate(val):
@@ -191,65 +196,70 @@ inst_counts = 0
 op_counts = {}
 ext_counts = {}
 
+#full_path = "/home/geonhwa/research/intel-cpu/exp/gemm/32-32-32"
+full_path = args.input_file
+out_path = full_path + '-analysis.txt'
 
 file1 = open(full_path, 'r')
 
 print("Begin analyzing SDE Traces: " + full_path)
 
-lines = file1.readlines()
-
-lines = lines[LINE_START:LINE_END+1]
- 
-for i in tqdm(range(len(lines))): 
-    line_type = check_line(lines[i])
-    if(line_type == 0):
-        continue
-    if(line_type == -1):
-        continue
-    
-    if(line_type == 1):     # Read 0 = *(UINT8*)0x00007ffda64d7bf3
-        continue
-    
-    if(line_type == 2): # Write *(UINT64*)0x00007fcc8031ac60 = 0x107ff1a94b01b2
-        continue    
-    
-    if(line_type == 3): # Update INS
-        line = lines[i].split(" ")
+while True:
+    lines = None
+    lines = file1.readlines(8192*1024*1024)
+    if not lines:
+        break
+    for i in tqdm(range(len(lines))): 
+        line_type = check_line(lines[i])
+        if(line_type == 0):
+            continue
+        if(line_type == -1):
+            continue
         
-        # ins_addr = np.uint64(int(line[1], 16))
+        if(line_type == 1):     # Read 0 = *(UINT8*)0x00007ffda64d7bf3
+            continue
         
-        # dst register analysis
-        # | r9 = 0x7fd00031b418, rflags = 0x206
+        if(line_type == 2): # Write *(UINT64*)0x00007fcc8031ac60 = 0x107ff1a94b01b2
+            continue    
         
-        #ins_parts = list(filter(lambda a: a != '', ins_parts))
-        
-        # ['INS', '0x00007fcc8010e790', 'BASE', 'mov', 'rax,', 'qword', 'ptr', '[rdx+0x8]']
-        
-        line = list(filter(lambda a: a != '', line))
-        #addr = line[1][2:]
-        ext = line[2]
-        
-        if ext in ext_counts.keys():
-            ext_counts[ext] += 1
-        else:
-            ext_counts[ext] = 1
-        
-        if (ext == 'AMX_BF16') or (ext == 'AMX_TILE'):
-            print(ext)
-            print(line)
+        if(line_type == 3): # Update INS
+            line = lines[i].split(" ")
             
-        opcode = line[3]
-        if(opcode[-1] == '\n'):
-            opcode = opcode[:-1]
-        if line[3] in constant.prefixes:
-            opcode = opcode + ' ' + line[4]
-        
-        if opcode in op_counts.keys():
-            op_counts[opcode] += 1
-        else:
-            op_counts[opcode] = 1
-        
-        inst_counts += 1
+            # ins_addr = np.uint64(int(line[1], 16))
+            
+            # dst register analysis
+            # | r9 = 0x7fd00031b418, rflags = 0x206
+            
+            #ins_parts = list(filter(lambda a: a != '', ins_parts))
+            
+            # ['INS', '0x00007fcc8010e790', 'BASE', 'mov', 'rax,', 'qword', 'ptr', '[rdx+0x8]']
+            
+            line = list(filter(lambda a: a != '', line))
+            #addr = line[1][2:]
+            ext = line[2]
+            
+            if ext in ext_counts.keys():
+                ext_counts[ext] += 1
+            else:
+                ext_counts[ext] = 1
+            
+            '''
+            if (ext == 'AMX_BF16') or (ext == 'AMX_TILE'):
+                print(ext)
+                print(line)
+            ''' 
+            opcode = line[3]
+            if(opcode[-1] == '\n'):
+                opcode = opcode[:-1]
+            if line[3] in constant.prefixes:
+                opcode = opcode + ' ' + line[4]
+            
+            if opcode in op_counts.keys():
+                op_counts[opcode] += 1
+            else:
+                op_counts[opcode] = 1
+            
+            inst_counts += 1
 
 op_counts = sorted(op_counts.items(), key=lambda x: x[1], reverse=True)
 ext_counts = sorted(ext_counts.items(), key=lambda x: x[1], reverse=True)
@@ -266,152 +276,3 @@ out_file.write(str(op_counts))
 print("Total number of instructions: %d"%inst_counts)
 print("Done analyzing trace")
 print("Saved result at " + out_path)
-
-assert(False)
-
-# Using readlines() 
-#file1 = open('sde-debugtrace-out.txt', 'r')
-
-  
-mem_rd_cnt = 0
-mem_wt_cnt = 0
-count = 0
-ins = b''
-
-reg_to_idx = {}
-addr_to_xed = {}
-addr_to_opcode = {}
-# Read
-# INS
-# Write
-# -> Trace
-# Strips the newline character 
-
-ready_to_push = False
-inst_info = InstInfo()
-
-file2 = open('./xsmm-files/spr-dis.txt', 'r')
-lines = file2.readlines() 
-for i in tqdm(range(len(lines))): 
-    line = lines[i].split(' ')
-    if(len(line) <= 1):
-        continue
-    
-    if line[0] == 'XDIS':
-        empty_idxs = []
-        for i in range(len(line)):
-            if(line[i] == ''):
-                empty_idxs.append(i)
-        cnt = 0
-        for i in empty_idxs:
-            del(line[ i- cnt])
-            cnt+= 1
-        addr = line[1][:-1]
-        xed_cat = line[2]
-        opcode = line[5]
-        val = (xed_cat, opcode)
-        addr_to_xed[addr] = val
-        
-file1 = open('./xsmm-files/spr-xgemm.txt', 'r')
-lines = file1.readlines() 
-for i in tqdm(range(len(lines))): 
-    line_type = check_line(lines[i])
-    if(line_type == 0):
-        continue
-    if(line_type == -1):
-        #print('continued line')
-        #print(lines[i])
-        #line = lines[i]
-        #assert(line[1:4] == 'XMM')
-        continue
-    
-    if(line_type == 1):     # Read 0 = *(UINT8*)0x00007ffda64d7bf3
-        continue
-    
-    if(line_type == 2): # Write *(UINT64*)0x00007fcc8031ac60 = 0x107ff1a94b01b2
-        continue
-
-    
-    
-    if(line_type == 3): # Update INS
-        line = lines[i].split(" ")
-        pruned_line = []
-        is_opcode = True
-        tmp_word = []
-        
-        inst_info.ins_addr = np.uint64(int(line[1], 16))
-        
-        # dst register analysis
-        # | r9 = 0x7fd00031b418, rflags = 0x206
-        reg_states = lines[i].split('|')
-        assert(len(reg_states) < 3)
-        dst_regs = []
-        if(len(reg_states) == 2):
-            reg_states = reg_states[1]
-            reg_states = reg_states.replace(' ', '')
-            reg_states = reg_states.split(',')
-            
-            if(len(reg_states[0]) > 9 and reg_states[0][:9] == "returning"):
-                    continue
-            inst_info.num_dest_regs = np.uint8(len(reg_states))
-            for j in range(len(reg_states)):
-                dst_reg = reg_states[j].split('=')[0]
-                inst_info.dst[j] = np.uint8(constant.regs[dst_reg])
-                dst_regs.append(dst_reg)
-        
-        ins_parts = lines[i].replace(',', '').split('|')[0]
-        ins_parts = ins_parts.split(' ')
-        ins_parts = list(filter(lambda a: a != '', ins_parts))
-        if(ins_parts[-1][-1] == '\n'):
-            ins_parts[-1] = ins_parts[-1][:-1]
-        
-        # ['INS', '0x00007fcc8010e790', 'BASE', 'mov', 'rax,', 'qword', 'ptr', '[rdx+0x8]']
-        
-        ins_parts = ins_parts[4:]
-
-        line = list(filter(lambda a: a != '', line))
-        addr = line[1][2:]
-        for i in range(len(addr)):
-            if addr[i] != '0':
-                addr = addr[i:]
-                break
-        opcode = line[3]
-        
-        
-        val = addr_to_xed[addr]
-        
-        assert(False)
-    
-        # Check whether dst_reg can only be at the first operand.
-            
-        #print(ins_parts)
-        #print('src_regs: ' + str(src_regs))
-        
-        # parse pruned_line into opcode and arguments
-        
-        
-        ''' All regs except dst regs should be src regs
-        num_src_regs = np.uint8(1)
-        src[0] = np.uint8(constant.regs[pruned_line[2][0]])
-        '''
-        # for memory access
-        #if(pruned_line[0] == 'mov'):
-        #    opcode = np.uint8(30)  
-
-print("Done analyzing trace")
-
-assert(False)
-
-
-        
-    
-   
-import gzip
-with gzip.open('trace_0.raw', 'wb') as f:
-    f.write(ins)
-
-print("Complete conversion from SDE Trace to Macsim Trace")
-
-print("Total num of ins: %d" % count)
-print("Total memory read count: %d" % mem_rd_cnt)
-print("Total memory write count: %d" % mem_wt_cnt)
