@@ -119,12 +119,13 @@ if MANUAL is False:
                 break
             else:
                 start_candidate += 1
-    div_points.append(len(lines))
+    div_points.append(len(lines)-1)
 print(div_points)
 
 file1.close()
 lines = None
 #######
+
 
 def process_data(thread_id, file_name, idx_range):
     file1 = open(base_dir + file_name, 'r')
@@ -134,6 +135,8 @@ def process_data(thread_id, file_name, idx_range):
                 break
     num_read_lines = idx_range[1]-idx_range[0]+1
     print("thread %d is reponsible from %d to %d"%(thread_id, idx_range[0], idx_range[1]))
+    tot_zero_count = 0
+
     mem_rd_cnt = 0
     mem_wt_cnt = 0
     count = 0
@@ -156,6 +159,12 @@ def process_data(thread_id, file_name, idx_range):
     num_blocks = num_read_lines/block_size
     num_lines = 0
     done_read=False
+
+    tot_tdpbf16_count = 0
+    tot_num_elements = 0
+    tot_zero_elements = 0
+
+    tmm_byte_mask = [[], [], [], [], [], [], [], []]
     while done_read is False:
         if(num_lines % ((num_read_lines)/10) == 0):
                 print('thread %d processed %d %% lines'%(thread_id,
@@ -164,9 +173,20 @@ def process_data(thread_id, file_name, idx_range):
         lines = None
 
         lines = file1.readlines(block_size)
-        if(len(lines) > num_read_lines):
+        print(len(lines))
+        print(num_read_lines)
+        if(len(lines) >= num_read_lines):
             lines = lines[:num_read_lines]
             done_read = True
+        else:
+            while(check_line(lines[len(lines)-1]) != 3):
+                if(check_line(lines[len(lines)-1]) == 0):
+                    print("last line")
+                    break
+                new_line = file1.readline()
+                print(new_line)
+                lines.append(new_line)
+            
         num_lines += len(lines)
 
         if not lines:
@@ -190,10 +210,14 @@ def process_data(thread_id, file_name, idx_range):
         
 
         print("tid %d: # of lines: %d"%(thread_id,len(lines)))
+        cur_percentage = int(0)
+        unit = len(lines) / 10
+        unit = int(unit)
         for i in range(len(lines)):
-            if(i % ((len(lines))/10) == 0):
+            if(i > int(cur_percentage * unit)):
                 print('thread %d processed %d %% lines'%(thread_id,
-                int(i/int((len(lines)/10))*10)))
+                cur_percentage*10))
+                cur_percentage += 1
             if(reading_lines):
                 line_type = 1
             else:
@@ -592,8 +616,6 @@ def process_data(thread_id, file_name, idx_range):
                                 if(not part in dst_regs):
                                     src_regs.append(part)
 
-    
-
                 # TODO Update for tmm registers
                 inst_info.num_read_regs = np.uint8(len(src_regs))
                 for j in range(len(src_regs)):
@@ -612,6 +634,66 @@ def process_data(thread_id, file_name, idx_range):
                     inst_info.init_ins()
                     ready_to_push = False
 
+                # read tmm register values
+                if(cur_ins == 'tdpbf16ps' or cur_ins == 'tileloadd' or cur_ins == 'tilezero'):
+                    if(cur_ins == 'tdpbf16ps'):
+                        #print(src_regs) # ex) tmm1, tmm2, tmm3
+                        for src_idx in range(len(src_regs)):
+                            inst_info.src_bitmask[src_idx] = tmm_byte_mask[int(src_regs[src_idx][3])]
+
+                            # calculate sparsity in the operands for BF16
+                            assert(len(inst_info.src_bitmask[src_idx]) == 16)
+                            if(src_idx == 1): # skip the first one since it's output
+                                tot_num_elements += 16*32
+                                for row in inst_info.src_bitmask[src_idx]: # row is np.uint64
+                                    tot_zero_elements += get_num_zeros_bf16(row);
+
+                
+                    i += 1
+                    target = None
+                    target_val = []
+                    num_target_rows = 0
+                    num_target_cols = 0
+                    #print(lines[i])
+
+                    (target, num_target_rows, num_target_cols) = read_header(lines[i]);
+                    i += 1
+
+                    while(starts_blank(lines[i])):
+                        (zero_count, row, mask) = read_row(lines[i:i+2])
+                        tot_zero_count += zero_count
+                        target_val.append(mask);
+                        #print(row)
+                        #print(mask)
+                        i += 2
+
+                    while(len(target_val) < 16):
+                        target_val.append(np.uint64(0))
+
+                    '''
+                    if(cur_ins == 'tdpbf16ps'):
+                        print('tdpbf16ps')
+                    if(cur_ins == 'tilezero'):
+                        print('tilezero')
+                    if(cur_ins == 'tileloadd'):
+                        print('tileloadd')
+                    '''
+                    #print(int(target[3]))
+                    tmm_byte_mask[int(target[3])] = target_val
+
+                    #print("target val size {}".format(len(target_val)))
+                    #print("target val row size {}".format(len(target_val[0])))
+
+                    i -= 1;
+                    if(cur_ins == 'tdpbf16ps'):
+                        for dst_idx in range(len(dst_regs)):
+                            inst_info.dst_bitmask[dst_idx] = tmm_byte_mask[int(dst_regs[dst_idx][3])]
+                    
+                        #print(dst_regs) # ex) tmm1
+                        tot_tdpbf16_count += 1
+
+                
+
     outfile_name = str(thread_id) + '_' + file_name
     with open(base_dir + outfile_name, 'wb') as out_file:
         out_file.write(ins)
@@ -623,6 +705,14 @@ def process_data(thread_id, file_name, idx_range):
     print("Total memory write count: %d" % mem_wt_cnt)
     print("Num pattern success: %d" % pattern_success)
     print("Num pattern fail: %d" % pattern_fail)
+
+    print("Total zero count: %d" % tot_zero_count)
+
+    print("tot_tdpbf16_count: %d" % tot_tdpbf16_count)
+    print("tot_zero_elements: %d" % tot_zero_elements)
+    print("tot_num_elements: %d" % tot_num_elements)
+    sparsity = tot_zero_elements / tot_num_elements
+    print("Sparsity in operands: %f" % sparsity)
 
 # Create new processes
 processes = []
@@ -662,4 +752,4 @@ for i in range(NUM_DIVS):
 with gzip.open(out_path, 'wb') as f:
     f.write(ins)
     
-print("Done conversion for %d instructions"%(len(ins)/80))
+print("Done conversion for %d instructions"%(len(ins)/(80+ 3*8*16))) 

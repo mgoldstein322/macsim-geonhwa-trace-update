@@ -33,8 +33,23 @@ class InstInfo:
         # added for TILESTORE
         self.num_st = np.uint8(0)
         self.st_vaddr2 = np.uint64(0)
-    def test(self):
-        print(self.opcode)
+
+        self.src_bitmask = []
+        for _ in range(9):
+            tmp_bitmask = []
+            for _ in range(16):
+                tmp_row = np.uint64(0)
+                tmp_bitmask.append(tmp_row)
+            self.src_bitmask.append(tmp_bitmask)
+
+        self.dst_bitmask = []
+        for _ in range(9):
+            tmp_bitmask = []
+            for _ in range(16):
+                tmp_row = np.uint64(0)
+                tmp_bitmask.append(tmp_row)
+            self.dst_bitmask.append(tmp_bitmask)
+
     def init_ins(self):
         self.num_read_regs = np.uint8(0)    # 3-bits
         self.num_dest_regs = np.uint8(0)    # 3-bits
@@ -67,6 +82,22 @@ class InstInfo:
         self.num_st = np.uint8(0)
         self.st_vaddr2 = np.uint64(0) 
 
+        self.src_bitmask = []
+        for _ in range(9):
+            tmp_bitmask = []
+            for _ in range(16):
+                tmp_row = np.uint64(0)
+                tmp_bitmask.append(tmp_row)
+            self.src_bitmask.append(tmp_bitmask)
+
+        self.dst_bitmask = []
+        for _ in range(9):
+            tmp_bitmask = []
+            for _ in range(16):
+                tmp_row = np.uint64(0)
+                tmp_bitmask.append(tmp_row)
+            self.dst_bitmask.append(tmp_bitmask)
+
     # Copy ins from copy to this except inst
     def copy_ins(self, tmp):
         self.num_read_regs = tmp.num_read_regs    # 3-bits
@@ -97,17 +128,51 @@ class InstInfo:
         # added for TILESTORE
         self.num_st = tmp.num_st
         self.st_vaddr2 = tmp.st_vaddr2 
+
+        self.src_bitmask = []
+        for i in range(9):
+            tmp_bitmask = []
+            for j in range(16):
+                tmp_bitmask.append(tmp.src_bitmask[i][j])
+            self.src_bitmask.append(tmp_bitmask)
+        self.src_bitmask = tmp.src_bitmask
+
+
+        self.dst_bitmask = []
+        for i in range(9):
+            tmp_bitmask = []
+            for j in range(16):
+                tmp_bitmask.append(tmp.dst_bitmask[i][j])
+            self.dst_bitmask.append(tmp_bitmask)
     
     def get_macsim_ins(self):
-        info = struct.pack('BBBBBBBBBBBBBBBBBB?B???BBQQQQQBB??', 
+        bool64 = ''
+        for i in range(9*16*64):
+            bool64 += '?'
+        #print(type(self.src_bitmask[0][0]))
+        #print(self.src_bitmask[0][0])
+        info = struct.pack('BBBBBBBBBBBBBBBBBB?B???BBQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQBB??', 
                 self.num_read_regs, self.num_dest_regs, 
                 self.src[0], self.src[1], self.src[2], self.src[3], self.src[4], self.src[5], self.src[6], self.src[7], self.src[8], 
                 self.dst[0], self.dst[1], self.dst[2], self.dst[3], self.dst[4], self.dst[5],
-                self.cf_type, self.has_immediate, self.opcode, self.has_st, self.is_fp, self.write_flg, self.num_ld, self.size, 
-                self.ld_vaddr1, self.ld_vaddr2, self.st_vaddr, self.ins_addr, self.branch_target, self.mem_read_size, self.mem_write_size,
-                self.rep_dir, self.actually_taken)
+                self.cf_type, self.has_immediate, self.opcode, 
+                self.has_st, self.is_fp, self.write_flg, 
+                self.num_ld, self.size, 
+                
+                self.src_bitmask[0][0], self.src_bitmask[0][1], self.src_bitmask[0][2], self.src_bitmask[0][3], self.src_bitmask[0][4], self.src_bitmask[0][5], self.src_bitmask[0][6], self.src_bitmask[0][7],
+                self.src_bitmask[0][8], self.src_bitmask[0][9], self.src_bitmask[0][10], self.src_bitmask[0][11], self.src_bitmask[0][12], self.src_bitmask[0][13], self.src_bitmask[0][14], self.src_bitmask[0][15],
+                self.src_bitmask[1][0], self.src_bitmask[1][1], self.src_bitmask[1][2], self.src_bitmask[1][3], self.src_bitmask[1][4], self.src_bitmask[1][5], self.src_bitmask[1][6], self.src_bitmask[1][7],
+                self.src_bitmask[1][8], self.src_bitmask[1][9], self.src_bitmask[1][10], self.src_bitmask[1][11], self.src_bitmask[1][12], self.src_bitmask[1][13], self.src_bitmask[1][14], self.src_bitmask[1][15],
+                self.src_bitmask[2][0], self.src_bitmask[2][1], self.src_bitmask[2][2], self.src_bitmask[2][3], self.src_bitmask[2][4], self.src_bitmask[2][5], self.src_bitmask[2][6], self.src_bitmask[2][7],
+                self.src_bitmask[2][8], self.src_bitmask[2][9], self.src_bitmask[2][10], self.src_bitmask[2][11], self.src_bitmask[2][12], self.src_bitmask[2][13], self.src_bitmask[2][14], self.src_bitmask[2][15],
+                
+                self.ld_vaddr1, self.ld_vaddr2, self.st_vaddr, self.ins_addr, self.branch_target, 
+                self.mem_read_size, self.mem_write_size,
+                self.rep_dir, self.actually_taken,
+                )
             
         ins = info + b'0000'
-        assert(len(ins) == 80)
+        #print(len(ins))
+        assert(len(ins) == (80+ 3*8*16 ))
         return ins
         

@@ -38,7 +38,7 @@ class all_knobs_c {
 		KnobTemplate< int >* KNOB_AMX_FF_LATENCY;
 		KnobTemplate< int >* KNOB_AMX_FS_LATENCY;
 		KnobTemplate< int >* KNOB_AMX_DR_LATENCY;
-		KnobTemplate< int >* KNOB_AMX_CYCLE_SCALE;
+		KnobTemplate< float >* KNOB_AMX_CYCLE_SCALE;
 	// =========== ../def/bp.param.def ===========
 		KnobTemplate< uns >* KNOB_BP_HIST_LENGTH;
 		KnobTemplate< uns >* KNOB_PHT_CTR_BITS;

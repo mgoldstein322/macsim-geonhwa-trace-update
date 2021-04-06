@@ -320,6 +320,31 @@ void cpu_decoder_c::convert_dyn_uop(inst_info_s *info, void *trace_info,
     }
   }
 
+  if (pi->m_opcode == AMX_TILE_COMPUTE_BF16) {
+          int num_zeros = 0;
+          DEBUG_CORE(core_id,
+                "AMX_TILE_COMPUTE convert_dyn_uop m_src_bitmask[0][0]: %lx, mem_size: %d"
+                 "pi->instruction_addr:0x%llx trace_uop->m_va:0x%llx \n",
+                 pi->m_src_bitmask[0][0], trace_uop->m_mem_size,
+                 (Addr)(pi->m_instruction_addr), trace_uop->m_va);
+          for(int i = 0; i < 3; i++){
+            for(int j = 0; j < 16; j++){
+              uint64_t mask = 3;
+              uint64_t row = pi->m_src_bitmask[i][j];
+              for(int k = 0; k < 32; k++){
+                if(!(row & mask))
+                  num_zeros += 1;
+                
+                mask << 2;
+              }
+            }
+            
+          }
+          STAT_EVENT_N(TDPBF16_OPERANDS_COUNT, 3*16*32);
+          STAT_EVENT_N(TDPBF16_ZEROS_COUNT, num_zeros);
+
+  }
+
   // next pc
   trace_uop->m_npc = trace_uop->m_addr;
 }

@@ -87,6 +87,7 @@ typedef struct trace_info_cpu_s {
   bool m_write_flg; /**< write flag */
   uint8_t m_num_ld; /**< number of load operations */
   uint8_t m_size; /**< instruction size */
+  uint64_t m_src_bitmask[3][16];
   // dynamic information
   uint64_t m_ld_vaddr1; /**< load address 1 */
   uint64_t m_ld_vaddr2; /**< load address 2 */

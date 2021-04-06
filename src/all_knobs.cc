@@ -16,7 +16,7 @@ all_knobs_c::all_knobs_c() {
 	KNOB_AMX_FS_LATENCY = new KnobTemplate< int > ("amx_fs_latency", 32);
 	KNOB_AMX_DR_LATENCY = new KnobTemplate< int > ("amx_dr_latency", 16);
 
-	KNOB_AMX_CYCLE_SCALE = new KnobTemplate< int > ("amx_cycle_scale", 4);
+	KNOB_AMX_CYCLE_SCALE = new KnobTemplate< float > ("amx_cycle_scale", 4);
 
 
 	// =========== ../def/bp.param.def ===========
