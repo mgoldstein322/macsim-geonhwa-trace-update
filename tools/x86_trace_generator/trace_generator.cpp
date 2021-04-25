@@ -60,7 +60,7 @@ using namespace INSTLIB;
 #define ctr_t UINT64
 #define uns UINT32
 
-#define t_gen_ver 1.3
+#define t_gen_ver 1.4
 
 #define DUMMY_THREAD 100000
 
@@ -190,6 +190,84 @@ void sanity_check(void);
 LOCALVAR CONTROL_MANAGER control;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
+// For AMX Emulation
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst, THREADID threadid)
+{
+    cout << "Emulate loading from addr " << addr << " to " << REG_StringShort(reg) << endl;
+    PIN_SafeCopy(&(TREGFILE[dst].data), addr, 256*sizeof(FLT32));
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[dst].data[i][j];
+      }
+      cout << endl;
+    }
+
+    THREADID tid = threadMap[threadid];
+    THREAD_ENABLE_CHECK(tid);
+
+    Trace_info *trace_info = trace_info_array[tid];
+    if (trace_info == NULL)
+      return;
+    trace_info->vaddr1 = *addr;
+    trace_info->mem_read_size = 64;
+}
+
+VOID DoStore(REG reg, ADDRINT * addr, UINT32 src, THREADID threadid)
+{
+  cout << "Emulate store to addr " << addr << " from " << REG_StringShort(reg) << endl;
+  PIN_SafeCopy(addr, &(TREGFILE[src].data), 256*sizeof(FLT32));
+  for (int i = 0; i < 16; i++) {
+    for (int j = 0; j < 16; j++) {
+      cout << "\t" << TREGFILE[src].data[i][j];
+    }
+    cout << endl;
+  }
+
+  THREADID tid = threadMap[threadid];
+  THREAD_ENABLE_CHECK(tid);
+
+  Trace_info *trace_info = trace_info_array[tid];
+  if (trace_info == NULL)
+    return;
+  trace_info->st_vaddr = *addr;
+  trace_info->mem_write_size = 64;
+  // TODO: Set stride at inst_info.ld_vaddr2 = np.uint64(stride)
+}
+
+VOID DoZero(UINT32 dst, THREADID threadid)
+{
+      int i, j;
+      for (i = 0; i < 16; i++) {
+        for (j = 0; j < 16; j++) {
+            TREGFILE[dst].data[i][j] = 0.0f;
+	}
+      }
+}
+
+VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b, THREADID threadid)
+{
+      int m, k, n;
+      for (m = 0; m < 16; m++) {
+        for (n = 0; n < 16; n++) {
+          for (k = 0; k < 16; k++) {
+	    // C += A * B_transpose
+            TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][k] * TREGFILE[b].data[n][k];
+	  }
+	}
+      }
+      /*for (m = 0; m < 16; m++) {
+        for (k = 0; k < 4; k++) {
+          for (n = 0; n < 4; n++) {
+            TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][2*k+0] * TREGFILE[b].data[k][2*n+0];
+            TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][2*k+1] * TREGFILE[b].data[k][2*n+1];
+	  }
+	}
+      }*/
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
 // control handler for pinpoint (simpoint)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 LOCALFUN VOID Handler(EVENT_TYPE ev, void *v, CONTEXT *ctxt, void *ip, THREADID tid, bool bast)
@@ -255,6 +333,7 @@ void IncrementNumInstruction(THREADID threadid)
     PIN_ReleaseLock(&g_lock);
   }
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Detach function
@@ -831,7 +910,7 @@ void instrument(INS ins)
   // ----------------------------------------
   // Load instruction
   // ----------------------------------------
-  if (INS_IsMemoryRead(ins))
+  if (INS_IsMemoryRead(ins) && (INS_Category(ins) != XED_CATEGORY_AMX_TILE))
   {
     // 2 memory loads
     if (INS_HasMemoryRead2(ins))
@@ -858,7 +937,7 @@ void instrument(INS ins)
   // ----------------------------------------
   // Store instruction
   // ----------------------------------------
-  if (INS_IsMemoryWrite(ins))
+  if (INS_IsMemoryWrite(ins) && INS_Category(ins) != XED_CATEGORY_AMX_TILE)
   {
     info->has_st = 1;
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE,
@@ -889,6 +968,113 @@ void instrument(INS ins)
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_target, IARG_BRANCH_TARGET_ADDR, IARG_BRANCH_TAKEN, IARG_THREAD_ID, IARG_END);
   }
 
+  if (INS_Category(ins) == XED_CATEGORY_AMX_TILE)
+  {
+    //info->opcode = AMX_TILE;
+
+    // AMX Emulation
+
+    // info->bitmap your routine
+    if (INS_Opcode(ins) == XED_ICLASS_TILELOADD)
+    {
+      info->num_ld = 16;
+
+      REG r = INS_OperandReg (ins, 0);
+      REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
+      REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
+      UINT32 dst = r - REG_TMM0;
+      cout << "tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
+      INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoLoad),
+                       IARG_UINT32,
+                       REG(INS_OperandReg(ins, 0)),
+		       IARG_MEMORYOP_EA, 0,
+		       IARG_UINT32,
+		       dst,
+          IARG_THREAD_ID,
+                       IARG_END);
+      
+      
+    }
+    else if(INS_Mnemonic(ins) == "TDPBF16PS")
+    {
+      info->is_fp = 1;
+      REG r = (REG)INS_OperandReg (ins, 0);
+      REG ra = (REG)INS_OperandReg (ins, 1);
+      REG rb = (REG)INS_OperandReg (ins, 2);
+      if (!REG_is_tmm(r)) cout << "opd 0 is not a register" << endl;
+      if (!REG_is_tmm(ra)) cout << "opd 1 is not a register" << endl;
+      if (!REG_is_tmm(rb)) cout << "opd 2 is not a register" << endl;
+      UINT32 dst = r - REG_TMM0;
+      UINT32 a = ra - REG_TMM0;
+      UINT32 b = rb - REG_TMM0;
+      cout << "tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+      INS_InsertCall(ins,
+                      IPOINT_BEFORE,
+                      AFUNPTR(DoGEMM),
+          IARG_UINT32,
+          dst,
+          IARG_UINT32,
+          a,
+          IARG_UINT32,
+          b,
+          IARG_THREAD_ID,
+                      IARG_END);
+    }
+    else if (INS_Mnemonic(ins) == "TILEZERO")
+    {
+      REG r = INS_OperandReg (ins, 0);
+      if (!REG_is_tmm(r)) cout << "opd 0 is not a register" << endl;
+      cout << "tilezero " << REG_StringShort(r) << endl;
+      UINT32 dst = r - REG_TMM0;
+      INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoZero),
+		       IARG_UINT32,
+		       dst,
+           IARG_THREAD_ID,
+                       IARG_END);
+    }
+    else if (INS_Mnemonic(ins) == "TILESTORED")
+    {
+      info->has_st = 1;
+      REG r = INS_OperandReg (ins, 1);
+      REG baseReg = INS_OperandMemoryBaseReg (ins, 0);
+      REG indexReg = INS_OperandMemoryIndexReg (ins, 0);
+      if (!REG_is_tmm(r)) cout << "opd 1 is not a register" << endl;
+      UINT32 src = r - REG_TMM0;
+      cout << "tilestored [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "], " << REG_StringShort(r) << endl;
+      INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoStore),
+                       IARG_UINT32,
+                       REG(INS_OperandReg(ins, 1)),
+		       IARG_MEMORYOP_EA, 0,
+		       IARG_UINT32,
+		       src,
+           IARG_THREAD_ID,
+                       IARG_END);
+    }
+    else if (INS_Mnemonic(ins) == "LDTILECFG")
+    {
+      // TODO: Implement 
+      cout << "ldtilecfg" << endl;
+      INS_Delete(ins);
+    }
+    else if (INS_Mnemonic(ins) == "TILERELEASE")
+    {
+      cout << "tilerelease" << endl;
+      INS_Delete(ins);
+    }
+    else
+    {
+      cout << "Unsupported AMX instruction" << endl;
+      exit(-1);
+      //info->opcode = AMX_TILE;
+    }
+  }
+
   // ----------------------------------------
   // Write an instruction to buffer
   // ----------------------------------------
@@ -900,6 +1086,11 @@ void instrument(INS ins)
   if (print_inst)
   {
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dprint_inst, IARG_INST_PTR, IARG_PTR, new string(INS_Disassemble(ins)), IARG_THREAD_ID, IARG_END);
+  }
+
+  if (INS_Category(ins) == XED_CATEGORY_AMX_TILE)
+  {
+    INS_Delete(ins);
   }
 }
 
