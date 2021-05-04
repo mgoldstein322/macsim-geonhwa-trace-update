@@ -255,6 +255,7 @@ int exec_c::get_latency(Uop_Type uop_type) {
               + *m_simBase->m_knobs->KNOB_AMX_FF_LATENCY
               + *m_simBase->m_knobs->KNOB_AMX_FS_LATENCY
               + *m_simBase->m_knobs->KNOB_AMX_DR_LATENCY;
+    latency = 1;
     DEBUG_CORE(m_core_id,
              "UOP_AMX_COMPUTE_BF16 latency: %d\n",
              latency
@@ -339,7 +340,7 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
         DEBUG_CORE(m_core_id,
                   "UOP_AMX_COMPUTE_BF16 WL-BP enabled\n");
         // TODO Remove number
-        if(uop->m_opcode == 105){
+        if((uop->m_opcode == XED_CATEGORY_AMX_TILE) && (uop_type != UOP_AMX_COMPUTE_BF16)){
           DEBUG_CORE(m_core_id,
                   "WL-BP 1 \n");
           if(m_simBase->m_core_cycle[m_core_id] < m_tmul_done_cycle){
@@ -644,7 +645,8 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
   // non-memory (compute) instructions
   else {
     uop_latency = get_latency(uop_type);
-    if(uop->m_opcode == 106){
+    assert(!((uop_type == UOP_AMX_COMPUTE_BF16) && (uop->m_mem_type == MEM_LD)));
+    if((uop->m_opcode == XED_CATEGORY_AMX_TILE) && (uop_type == UOP_AMX_COMPUTE_BF16)){
       STAT_EVENT(TDPBF16_COUNT);
       int latency = 0;
       int port_open_latency = 0;
@@ -707,10 +709,29 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
           latency = *m_simBase->m_knobs->KNOB_AMX_FF_LATENCY
                     + *m_simBase->m_knobs->KNOB_AMX_FS_LATENCY
                     + *m_simBase->m_knobs->KNOB_AMX_DR_LATENCY;
-                  port_open_latency = *m_simBase->m_knobs->KNOB_AMX_FF_LATENCY;
+          port_open_latency = *m_simBase->m_knobs->KNOB_AMX_FF_LATENCY;
         }
       }
       
+      //TODO FIX HERE
+      // if sparse 
+      if(uop->m_num_srcs == 4){
+        DEBUG_CORE(m_core_id,
+                  "UOP_AMX_SPARSE_COMPUTE detected\n");
+        latency = 8;
+        port_open_latency = 8;
+      }
+      // if sparse 
+      else if(uop->m_num_srcs == 3){
+        DEBUG_CORE(m_core_id,
+                  "UOP_AMX_DENSE_COMPUTE detected\n");
+        latency = 16+32+16;
+        port_open_latency = 16;
+      }
+      else{
+        exit(-1);
+      }
+
       uop_latency = latency * (*m_simBase->m_knobs->KNOB_AMX_CYCLE_SCALE);
       m_tmul_done_cycle = m_cur_core_cycle + port_open_latency * (*m_simBase->m_knobs->KNOB_AMX_CYCLE_SCALE);
     }
@@ -808,7 +829,9 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
                static_cast<int>(*m_simBase->m_knobs->KNOB_EXEC_RETIRE_LATENCY));
     uop->m_done_cycle = m_cur_core_cycle + max_latency;
   }
-  if(uop->m_opcode == 105){
+  bool is_uop_mem_ld = uop->m_mem_type == MEM_LD;
+  bool is_uop_amx_compute = uop_type == UOP_AMX_COMPUTE_BF16;
+  if((uop->m_opcode == XED_CATEGORY_AMX_TILE) && is_uop_mem_ld && (!is_uop_amx_compute) ){
     DEBUG_CORE(
     m_core_id,
     "UOP_AMX_MEM done_exec m_core_id:%d thread_id:%d core_cycle_count:%llu uop_num:%llu"
@@ -822,8 +845,6 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
     uop->m_pc, uop->m_uop_type, uop->m_src_info[0], uop->m_src_info[1], uop->m_dest_info[0], uop->m_opcode);
   }
   if(uop_type == UOP_AMX_COMPUTE_BF16){
-    
-
     DEBUG_CORE(
     m_core_id,
     "UOP_AMX_COMPUTE_BF16 done_exec m_core_id:%d thread_id:%d core_cycle_count:%llu uop_num:%llu"

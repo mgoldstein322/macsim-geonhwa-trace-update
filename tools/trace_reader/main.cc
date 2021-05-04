@@ -49,9 +49,9 @@ do {                                                              \
   }                                                               \
 } while (0)
 
-#define PIN_3_13_TRACE 
+#define PIN_3_18_TRACE 
 
-#define t_read_ver "1.3"
+#define t_read_ver "1.4"
 
 all_knobs_c* g_knobs;
 
