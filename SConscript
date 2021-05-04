@@ -38,7 +38,7 @@ warn_flags = ' '.join(warn_flags)
 env = Environment()
 custom_vars = set(['AS', 'AR', 'CC', 'CXX', 'HOME', 'LD_LIBRARY_PATH', 'PATH', 'RANLIB'])
 
-for key,val in os.environ.iteritems():
+for key,val in os.environ.items():
   if key in custom_vars:
     env[key] = val
 
