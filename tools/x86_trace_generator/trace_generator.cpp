@@ -64,6 +64,8 @@ using namespace INSTLIB;
 
 #define DUMMY_THREAD 100000
 
+//#define VERBOSE
+
 #define THREAD_ENABLE_CHECK(tid)          \
   if ((tid) == DUMMY_THREAD)              \
     return;                               \
@@ -116,6 +118,9 @@ map<ADDRINT, inst_t *> g_inst_map;
 /////////////////////////////////////////////////////////////////////////////////////////
 /// global variables
 /////////////////////////////////////////////////////////////////////////////////////////
+bool begin_instrument = false;
+bool end_instrument = false;
+
 Trace_info *trace_info_array[MAX_THREADS];
 map<ADDRINT, Inst_info *> g_inst_storage[MAX_THREADS];
 PIN_LOCK g_lock;
@@ -154,6 +159,14 @@ Knob(UINT64, Knob_skip, "skipinst", "0", "Instructions to skip");
 Knob(UINT64, Knob_max, "max", "0", "Max number of instruction to collect");
 Knob(UINT64, Knob_rtn_min, "rmin", "0", "Max number of function calls to collect data");
 Knob(UINT64, Knob_rtn_max, "rmax", "0", "Max number of function calls to collect data");
+// TODO FIX HERE
+// Dense: 403320 40371d
+// Sparse: 403720 403bbd
+Knob(UINT64, Knob_start_address, "trace_gen_start_address", "0x403320", "Start address");
+Knob(UINT64, Knob_finish_address, "trace_gen_finish_address", "0x40371d", "Finish address");
+
+//Knob(UINT64, Knob_start_address, "trace_gen_start_address", "0x403630", "Start address");
+//Knob(UINT64, Knob_finish_address, "trace_gen_finish_address", "0x4039b9", "Finish address");
 
 //Added by Lifeng
 // knob variables and global variable
@@ -192,50 +205,134 @@ LOCALVAR CONTROL_MANAGER control;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 // For AMX Emulation
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst, THREADID threadid)
+/* ===================================================================== */
+/* Instrumentation routine that replaces TILELOADD insruction           */
+/* TILELOADD tmm, sibmem                                                 */
+/* ===================================================================== */
+
+/* ===================================================================== */
+/* Helper routine that checks if the next instruction is SPARSE          */
+/* ===================================================================== */
+
+BOOL IsMetadataTLOAD(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4d) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsSparseTLOAD(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4c) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsSparseTMUL(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x59) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+VOID DoMetadataLoad(REG reg, ADDRINT * addr, UINT32 dst)
 {
-    cout << "Emulate loading from addr " << addr << " to " << REG_StringShort(reg) << endl;
-    PIN_SafeCopy(&(TREGFILE[dst].data), addr, 256*sizeof(FLT32));
+#ifdef VERBOSE
+    cout << "Emulate loading metadata from addr " << addr << " to meta_" << REG_StringShort(reg) << endl;
+#endif
+    UINT8 buffer[16*32/8];
+    PIN_SafeCopy(&buffer, addr, 16*32*sizeof(UINT8)/8);
+    for (int i = 0; i < 16; i++) {
+      UINT32 idx = 0;
+      for (int j = 0; j < 4; j++) {
+        UINT8 element = buffer[i*4 + j];
+	for (int k = 0; k < 4; k++) {
+          UINT8 val = element & 0xC0;
+	  TREGFILE[dst].metadata[i][idx] = val >> 6;
+	  element = element << 2;
+	  idx++;
+	}
+      }
+    }
+#ifdef VERBOSE
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
-        cout << "\t" << TREGFILE[dst].data[i][j];
+        cout << "\t" << *(UINT32*)&TREGFILE[dst].metadata[i][j];
       }
       cout << endl;
     }
-
-    THREADID tid = threadMap[threadid];
-    THREAD_ENABLE_CHECK(tid);
-
-    Trace_info *trace_info = trace_info_array[tid];
-    if (trace_info == NULL)
-      return;
-    trace_info->vaddr1 = *addr;
-    trace_info->mem_read_size = 64;
+#endif
 }
 
-VOID DoStore(REG reg, ADDRINT * addr, UINT32 src, THREADID threadid)
+VOID DoSparseLoad(REG reg, ADDRINT * addr, UINT32 dst)
 {
-  cout << "Emulate store to addr " << addr << " from " << REG_StringShort(reg) << endl;
-  PIN_SafeCopy(addr, &(TREGFILE[src].data), 256*sizeof(FLT32));
-  for (int i = 0; i < 16; i++) {
-    for (int j = 0; j < 16; j++) {
-      cout << "\t" << TREGFILE[src].data[i][j];
+#ifdef VERBOSE
+    cout << "Emulate loading from addr " << addr << " to " << REG_StringShort(reg) << endl;
+#endif
+    FLT32 buffer[16*8];
+    PIN_SafeCopy(&buffer, addr, 16 * 8 * sizeof(FLT32));
+#ifdef VERBOSE
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 8; j++) {
+        TREGFILE[dst].data[i][j] = buffer[i * 8 + j];
+        cout << "\t" << *(UINT32*)&TREGFILE[dst].data[i][j];
+      }
+      cout << endl;
     }
-    cout << endl;
-  }
-
-  THREADID tid = threadMap[threadid];
-  THREAD_ENABLE_CHECK(tid);
-
-  Trace_info *trace_info = trace_info_array[tid];
-  if (trace_info == NULL)
-    return;
-  trace_info->st_vaddr = *addr;
-  trace_info->mem_write_size = 64;
-  // TODO: Set stride at inst_info.ld_vaddr2 = np.uint64(stride)
+#endif
 }
 
-VOID DoZero(UINT32 dst, THREADID threadid)
+
+VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst)
+{
+#ifdef VERBOSE
+    cout << "Emulate loading from addr " << addr << " to " << REG_StringShort(reg) << endl;
+#endif
+    PIN_SafeCopy(&(TREGFILE[dst].data), addr, 256*sizeof(FLT32));
+#ifdef VERBOSE
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << *(UINT32*)&TREGFILE[dst].data[i][j];
+      }
+      cout << endl;
+    }
+#endif
+}
+
+
+
+VOID DoStore(REG reg, ADDRINT * addr, UINT32 src)
+{
+#ifdef VERBOSE
+    cout << "Emulate store to addr " << addr << " from " << REG_StringShort(reg) << endl;
+#endif
+    PIN_SafeCopy(addr, &(TREGFILE[src].data), 256*sizeof(FLT32));
+#ifdef VERBOSE
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[src].data[i][j];
+      }
+      cout << endl;
+    }
+#endif
+}
+
+VOID DoZero(UINT32 dst)
 {
       int i, j;
       for (i = 0; i < 16; i++) {
@@ -245,27 +342,126 @@ VOID DoZero(UINT32 dst, THREADID threadid)
       }
 }
 
-VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b, THREADID threadid)
+VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b)
 {
       int m, k, n;
+      FLT32 A[16][32], B[16][32];
+      for (int i = 0; i < 16; i++) {
+	UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+	  left = (val & 0xffff0000);
+	  right = (val & 0x0000ffff) << 16;
+          A[i][col] = *(FLT32*)&left;   
+	  A[i][col+1] = *(FLT32*)&right;
+
+          val = *(UINT32*)&(TREGFILE[b].data[i][j]);
+	  left = (val & 0xffff0000);
+	  right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;   
+	  B[i][col+1] = *(FLT32*)&right;
+
+	  col += 2;
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER CONVERSION: MATRIX A" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX B" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << B[i][j];
+        }
+        cout << endl;
+      }
+#endif
       for (m = 0; m < 16; m++) {
         for (n = 0; n < 16; n++) {
-          for (k = 0; k < 16; k++) {
+          for (k = 0; k < 32; k++) {
 	    // C += A * B_transpose
-            TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][k] * TREGFILE[b].data[n][k];
+            //TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][k] * TREGFILE[b].data[n][k];
+            TREGFILE[dst].data[m][n] += A[m][k] * B[n][k];
 	  }
 	}
       }
-      /*for (m = 0; m < 16; m++) {
-        for (k = 0; k < 4; k++) {
-          for (n = 0; n < 4; n++) {
-            TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][2*k+0] * TREGFILE[b].data[k][2*n+0];
-            TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][2*k+1] * TREGFILE[b].data[k][2*n+1];
+}
+VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
+{
+      int m, k, n;
+      FLT32 A[16][16], B[16][32], A_dense[16][32];
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          if (j < 16)
+            A[i][j] = 0;
+          B[i][j] = 0;
+          A_dense[i][j] = 0;
+	}
+      }
+      // expand A bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+	UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 8; j++) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+	  left = (val & 0xffff0000);
+	  right = (val & 0x0000ffff) << 16;
+          A[i][col] = *(FLT32*)&left;   
+	  A[i][col+1] = *(FLT32*)&right;
+	  col += 2;
+        }
+      }
+      // expand compressed matrix A to A_dense
+      for (int i = 0; i < 16; i++) {
+	UINT32 col = 0;
+        for (int j = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A_dense[i][col + idx] = A[i][j];
+	  if (j % 2 == 1) {
+            col += 4;
 	  }
 	}
-      }*/
+      }
+      // expand B bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+	UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[b].data[i][j]);
+	  left = (val & 0xffff0000);
+	  right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;   
+	  B[i][col+1] = *(FLT32*)&right;
+	  col += 2;
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER CONVERSION: MATRIX A" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX B" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << B[i][j];
+        }
+        cout << endl;
+      }
+#endif
+      for (m = 0; m < 16; m++) {
+        for (n = 0; n < 16; n++) {
+          for (k = 0; k < 32; k++) {
+	    // C += A1 * B_transpose
+            TREGFILE[dst].data[m][n] += A_dense[m][k] * B[n][k];
+	  }
+	}
+      }
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 // control handler for pinpoint (simpoint)
@@ -371,6 +567,24 @@ void get_ld_ea(ADDRINT addr, UINT32 mem_read_size,
   trace_info->eflags = eflag_value;
 }
 
+void get_ld_ea_amx(ADDRINT addr, UINT32 stride, UINT32 mem_read_size,
+#ifndef PINLINUX
+               UINT32 eflag_value,
+#endif
+               THREADID threadid)
+{
+  THREADID tid = threadMap[threadid];
+  THREAD_ENABLE_CHECK(tid);
+
+  Trace_info *trace_info = trace_info_array[tid];
+  if (trace_info == NULL)
+    return;
+  trace_info->vaddr1 = addr;
+  trace_info->vaddr2 = static_cast<ADDRINT>(stride);
+  trace_info->mem_read_size = mem_read_size;
+  trace_info->eflags = eflag_value;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 // Get effective load addresses : instrumentation function
 // Insturction that has 2 load addresses
@@ -408,6 +622,24 @@ void get_st_ea(ADDRINT addr, UINT32 mem_st_size,
   Trace_info *trace_info = trace_info_array[tid];
   if (trace_info == NULL)
     return;
+  trace_info->st_vaddr = addr;
+  trace_info->mem_write_size = mem_st_size;
+  trace_info->eflags = eflag_value;
+}
+
+void get_st_ea_amx(ADDRINT addr, UINT32 stride, UINT32 mem_st_size,
+#ifndef PINLINUX
+               UINT32 eflag_value,
+#endif
+               THREADID threadid)
+{
+  THREADID tid = threadMap[threadid];
+  THREAD_ENABLE_CHECK(tid);
+
+  Trace_info *trace_info = trace_info_array[tid];
+  if (trace_info == NULL)
+    return;
+  trace_info->vaddr2 = static_cast<ADDRINT>(stride);
   trace_info->st_vaddr = addr;
   trace_info->mem_write_size = mem_st_size;
   trace_info->eflags = eflag_value;
@@ -643,6 +875,26 @@ VOID INST_trace(TRACE trace, VOID *v)
 */
 void instrument(INS ins)
 {
+  if(!begin_instrument){
+    //cout << Knob_start_address << endl;
+    //cout << INS_Address(ins) << endl;
+    if(Knob_start_address != INS_Address(ins))
+      return;
+    else{
+      begin_instrument = true;
+      cout << "begin" << endl;
+      }
+  }
+
+  if(end_instrument)
+    return;
+  else{
+    if(Knob_finish_address == INS_Address(ins)){
+      end_instrument = true;
+      cout << "done" << endl;
+    }
+  }
+
   THREADID tid = threadMap[PIN_ThreadId()];
   if (tid == 100000)
     return;
@@ -734,6 +986,7 @@ void instrument(INS ins)
         info->is_fp = TRUE;
 
       uint16_t tmp = static_cast<uint16_t>(REG_FullRegName(*begin));
+      // Why ??
       if (tmp > 256)
         tmp = tmp % 128 + 128;
       *ptr = (uint8_t)tmp;
@@ -910,34 +1163,38 @@ void instrument(INS ins)
   // ----------------------------------------
   // Load instruction
   // ----------------------------------------
-  if (INS_IsMemoryRead(ins) && (INS_Category(ins) != XED_CATEGORY_AMX_TILE))
+  if (INS_IsMemoryRead(ins)  && (INS_Category(ins) != XED_CATEGORY_AMX_TILE))
   {
     // 2 memory loads
     if (INS_HasMemoryRead2(ins))
     {
+      
       info->num_ld = 2;
       INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea2, IARG_MEMORYREAD_EA, IARG_MEMORYREAD2_EA, IARG_MEMORYREAD_SIZE,
 #ifndef PINLINUX
                      IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
 #endif
                      IARG_THREAD_ID, IARG_END);
+
     }
     // 1 memory load
     else
     {
+      
       info->num_ld = 1;
       INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea, IARG_MEMORYREAD_EA, IARG_MEMORYREAD_SIZE,
 #ifndef PINLINUX
-                     IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+                    IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
 #endif
-                     IARG_THREAD_ID, IARG_END);
+                    IARG_THREAD_ID, IARG_END);
+      
     }
   }
 
   // ----------------------------------------
   // Store instruction
   // ----------------------------------------
-  if (INS_IsMemoryWrite(ins) && INS_Category(ins) != XED_CATEGORY_AMX_TILE)
+  if (INS_IsMemoryWrite(ins) && (INS_Category(ins) != XED_CATEGORY_AMX_TILE))
   {
     info->has_st = 1;
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea, IARG_MEMORYWRITE_EA, IARG_MEMORYWRITE_SIZE,
@@ -980,11 +1237,85 @@ void instrument(INS ins)
       info->num_ld = 16;
 
       REG r = INS_OperandReg (ins, 0);
-      REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
-      REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
       UINT32 dst = r - REG_TMM0;
-      cout << "tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
-      INS_InsertCall(ins,
+      if (IsSparseTLOAD(ins)) {
+#ifdef VERBOSE
+        REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
+        REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
+        cout << "sparse_tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
+#endif
+        info->mem_read_size = 32;
+        UINT32 tmp_mem_read_size = 32;
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
+          IARG_MEMORYOP_EA, 0,
+          IARG_UINT32, tmp_mem_read_size,
+          IARG_UINT32, tmp_mem_read_size,
+  #ifndef PINLINUX
+                        IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+    #endif
+          IARG_THREAD_ID, IARG_END);
+        
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoSparseLoad),
+                       IARG_UINT32,
+                       REG(INS_OperandReg(ins, 0)),
+		       IARG_MEMORYOP_EA, 0,
+		       IARG_UINT32,
+		       dst,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsMetadataTLOAD(ins)) {
+#ifdef VERBOSE
+        REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
+        REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
+        cout << "metadata_tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
+#endif
+        // Change the dst address of metadata load to mm
+        info->mem_read_size = 4;
+        UINT32 tmp_mem_read_size = 4;
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
+          IARG_MEMORYOP_EA, 0,
+          IARG_UINT32, tmp_mem_read_size,
+          IARG_UINT32, tmp_mem_read_size,
+  #ifndef PINLINUX
+                        IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+    #endif
+          IARG_THREAD_ID, IARG_END);
+
+        assert(info->num_dest_regs == 1);
+        REG r = (REG)INS_OperandReg (ins, 0);
+        UINT32 ra = r - REG_TMM0;
+        assert(0 <= ra && ra < 8);
+        info->dst[0] = info->dst[0] - REG_TMM0 + REG_MM0;
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoMetadataLoad),
+                       IARG_UINT32,
+                       REG(INS_OperandReg(ins, 0)),
+		       IARG_MEMORYOP_EA, 0,
+		       IARG_UINT32,
+		       dst,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else {
+#ifdef VERBOSE
+        REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
+        REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
+        cout << "tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
+#endif
+        info->mem_read_size = 64;
+        UINT32 tmp_mem_read_size = 64;
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
+        IARG_MEMORYOP_EA, 0,
+        IARG_UINT32, tmp_mem_read_size,
+        IARG_UINT32, tmp_mem_read_size,
+  #ifndef PINLINUX
+                      IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+  #endif
+                      IARG_THREAD_ID, IARG_END);
+
+        INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoLoad),
                        IARG_UINT32,
@@ -992,14 +1323,14 @@ void instrument(INS ins)
 		       IARG_MEMORYOP_EA, 0,
 		       IARG_UINT32,
 		       dst,
-          IARG_THREAD_ID,
                        IARG_END);
-      
-      
+      }
+      INS_Delete(ins);
     }
     else if(INS_Mnemonic(ins) == "TDPBF16PS")
     {
       info->is_fp = 1;
+      
       REG r = (REG)INS_OperandReg (ins, 0);
       REG ra = (REG)INS_OperandReg (ins, 1);
       REG rb = (REG)INS_OperandReg (ins, 2);
@@ -1009,18 +1340,43 @@ void instrument(INS ins)
       UINT32 dst = r - REG_TMM0;
       UINT32 a = ra - REG_TMM0;
       UINT32 b = rb - REG_TMM0;
-      cout << "tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
-      INS_InsertCall(ins,
-                      IPOINT_BEFORE,
-                      AFUNPTR(DoGEMM),
-          IARG_UINT32,
-          dst,
-          IARG_UINT32,
-          a,
-          IARG_UINT32,
-          b,
-          IARG_THREAD_ID,
-                      IARG_END);
+      if (IsSparseTMUL(ins)) {
+#ifdef VERBOSE
+        cout << "sparse_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+#endif
+        cout << "sparse_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+        info->src[info->num_read_regs] = info->src[1] - REG_TMM0 + REG_MM0;
+        info->num_read_regs += 1;
+        
+	// TODO: call sparse TMUL instrumentation routine instead
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoSparseGEMM),
+		       IARG_UINT32,
+		       dst,
+		       IARG_UINT32,
+		       a,
+		       IARG_UINT32,
+		       b,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else {
+        assert(info->num_read_regs == 3);
+#ifdef VERBOSE
+        cout << "tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+#endif
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoGEMM),
+		       IARG_UINT32,
+		       dst,
+		       IARG_UINT32,
+		       a,
+		       IARG_UINT32,
+		       b,
+                       IARG_END);
+      }
+      INS_Delete(ins);
     }
     else if (INS_Mnemonic(ins) == "TILEZERO")
     {
@@ -1035,6 +1391,7 @@ void instrument(INS ins)
 		       dst,
            IARG_THREAD_ID,
                        IARG_END);
+      INS_Delete(ins);
     }
     else if (INS_Mnemonic(ins) == "TILESTORED")
     {
@@ -1045,6 +1402,17 @@ void instrument(INS ins)
       if (!REG_is_tmm(r)) cout << "opd 1 is not a register" << endl;
       UINT32 src = r - REG_TMM0;
       cout << "tilestored [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "], " << REG_StringShort(r) << endl;
+      
+      UINT32 tmp_mem_write_size = 64;
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea_amx, 
+          IARG_MEMORYOP_EA, 0,
+          IARG_UINT32, tmp_mem_write_size,
+          IARG_UINT32, tmp_mem_write_size,
+  #ifndef PINLINUX
+                        IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+    #endif
+          IARG_THREAD_ID, IARG_END);
+
       INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoStore),
@@ -1055,6 +1423,7 @@ void instrument(INS ins)
 		       src,
            IARG_THREAD_ID,
                        IARG_END);
+      INS_Delete(ins);
     }
     else if (INS_Mnemonic(ins) == "LDTILECFG")
     {
@@ -1088,10 +1457,12 @@ void instrument(INS ins)
     INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)dprint_inst, IARG_INST_PTR, IARG_PTR, new string(INS_Disassemble(ins)), IARG_THREAD_ID, IARG_END);
   }
 
+  /*
   if (INS_Category(ins) == XED_CATEGORY_AMX_TILE)
   {
     INS_Delete(ins);
   }
+  */
 }
 
 VOID InstHMC(ADDRINT pc)

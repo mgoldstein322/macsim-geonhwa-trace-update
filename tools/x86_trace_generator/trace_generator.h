@@ -270,11 +270,10 @@ string tr_opcode_names[112] = {
   "PREFETCH_T2",
 };
 
-*/
-
 // AMX Emulation
 typedef struct {
     FLT32 data[16][16];
+    UINT32 metadata[16][32];
 } TILE;
 TILE TREGFILE[8];
 
