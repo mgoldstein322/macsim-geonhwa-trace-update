@@ -220,7 +220,7 @@ BOOL IsMetadataTLOAD(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4d) {
+    if (opcodeBytes[3] == 0x4e) {
       return TRUE;
     }
     return FALSE;
@@ -232,7 +232,31 @@ BOOL IsSparseTLOAD(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4c) {
+    if (opcodeBytes[3] == 0x4f) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsUTLOAD(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[3] == 0x4d) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsUTSTORE(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[3] == 0x4c) {
       return TRUE;
     }
     return FALSE;
@@ -244,7 +268,7 @@ BOOL IsSparseTMUL(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x59) {
+    if (opcodeBytes[3] == 0x5a) {
       return TRUE;
     }
     return FALSE;
@@ -297,7 +321,6 @@ VOID DoSparseLoad(REG reg, ADDRINT * addr, UINT32 dst)
 #endif
 }
 
-
 VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst)
 {
 #ifdef VERBOSE
@@ -314,7 +337,28 @@ VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst)
 #endif
 }
 
-
+VOID DoULoad(REG reg, ADDRINT * addr, UINT32 dst)
+{
+#ifdef VERBOSE
+    cout << "Emulate loading from addr " << addr << " to tile registers " << dst << " and " << dst + 1 << endl;
+#endif
+    PIN_SafeCopy(&(TREGFILE[2*dst].data), addr, 256*sizeof(FLT32));
+    PIN_SafeCopy(&(TREGFILE[2*dst+1].data), addr + 256*sizeof(FLT32), 256*sizeof(FLT32));
+#ifdef VERBOSE
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << *(UINT32*)&TREGFILE[dst].data[i][j];
+      }
+      cout << endl;
+    }
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << *(UINT32*)&TREGFILE[dst+1].data[i][j];
+      }
+      cout << endl;
+    }
+#endif
+}
 
 VOID DoStore(REG reg, ADDRINT * addr, UINT32 src)
 {
@@ -326,6 +370,29 @@ VOID DoStore(REG reg, ADDRINT * addr, UINT32 src)
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
         cout << "\t" << TREGFILE[src].data[i][j];
+      }
+      cout << endl;
+    }
+#endif
+}
+
+VOID DoUStore(REG reg, ADDRINT * addr, UINT32 src)
+{
+#ifdef VERBOSE
+    cout << "Emulate store to addr " << addr << " from tile registers " << src << " and " << src + 1 << endl;
+#endif
+    PIN_SafeCopy(addr, &(TREGFILE[src].data), 256*sizeof(FLT32));
+    PIN_SafeCopy(addr + 256*sizeof(FLT32), &(TREGFILE[src+1].data), 256*sizeof(FLT32));
+#ifdef VERBOSE
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[src].data[i][j];
+      }
+      cout << endl;
+    }
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[src+1].data[i][j];
       }
       cout << endl;
     }
@@ -352,13 +419,13 @@ VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b)
           val = *(UINT32*)&(TREGFILE[a].data[i][j]);
 	  left = (val & 0xffff0000);
 	  right = (val & 0x0000ffff) << 16;
-          A[i][col] = *(FLT32*)&left;   
+          A[i][col] = *(FLT32*)&left;
 	  A[i][col+1] = *(FLT32*)&right;
 
           val = *(UINT32*)&(TREGFILE[b].data[i][j]);
 	  left = (val & 0xffff0000);
 	  right = (val & 0x0000ffff) << 16;
-          B[i][col] = *(FLT32*)&left;   
+          B[i][col] = *(FLT32*)&left;
 	  B[i][col+1] = *(FLT32*)&right;
 
 	  col += 2;
@@ -390,36 +457,63 @@ VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b)
 	}
       }
 }
+
 VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
 {
       int m, k, n;
-      FLT32 A[16][16], B[16][32], A_dense[16][32];
+      FLT32 A1[16][16], A2[16][16], B[16][32], A1_dense[16][32], A2_dense[16][32];
       for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 32; j++) {
-          if (j < 16)
-            A[i][j] = 0;
+          if (j < 16) {
+            A1[i][j] = 0;
+            A2[i][j] = 0;
+	  }
           B[i][j] = 0;
-          A_dense[i][j] = 0;
+          A1_dense[i][j] = 0;
+          A2_dense[i][j] = 0;
 	}
       }
-      // expand A bf16 to fp32
+      // expand A1 bf16 to fp32
       for (int i = 0; i < 16; i++) {
 	UINT32 col = 0, val, left, right;
         for (int j = 0; j < 8; j++) {
           val = *(UINT32*)&(TREGFILE[a].data[i][j]);
 	  left = (val & 0xffff0000);
 	  right = (val & 0x0000ffff) << 16;
-          A[i][col] = *(FLT32*)&left;   
-	  A[i][col+1] = *(FLT32*)&right;
+          A1[i][col] = *(FLT32*)&left;   
+	  A1[i][col+1] = *(FLT32*)&right;
 	  col += 2;
         }
       }
-      // expand compressed matrix A to A_dense
+      // expand compressed matrix A1 to A1_dense
       for (int i = 0; i < 16; i++) {
 	UINT32 col = 0;
         for (int j = 0; j < 16; j++) {
           int idx = TREGFILE[a].metadata[i][j];
-          A_dense[i][col + idx] = A[i][j];
+          A1_dense[i][col + idx] = A1[i][j];
+	  if (j % 2 == 1) {
+            col += 4;
+	  }
+	}
+      }
+      // expand A2 bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+	UINT32 col = 0, val, left, right;
+        for (int j = 8; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+	  left = (val & 0xffff0000);
+	  right = (val & 0x0000ffff) << 16;
+          A2[i][col] = *(FLT32*)&left;   
+	  A2[i][col+1] = *(FLT32*)&right;
+	  col += 2;
+        }
+      }
+      // expand compressed matrix A2 to A2_dense
+      for (int i = 0; i < 16; i++) {
+	UINT32 col = 0;
+        for (int j = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A2_dense[i][col + idx] = A2[i][j];
 	  if (j % 2 == 1) {
             col += 4;
 	  }
@@ -438,10 +532,17 @@ VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
         }
       }
 #ifdef VERBOSE
-      cout << "\nAFTER CONVERSION: MATRIX A" << endl;
+      cout << "\nAFTER CONVERSION: MATRIX A1" << endl;
       for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 32; j++) {
-          cout << "\t" << A_dense[i][j];
+          cout << "\t" << A1_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX A2" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A2_dense[i][j];
         }
         cout << endl;
       }
@@ -456,8 +557,10 @@ VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
       for (m = 0; m < 16; m++) {
         for (n = 0; n < 16; n++) {
           for (k = 0; k < 32; k++) {
-	    // C += A1 * B_transpose
-            TREGFILE[dst].data[m][n] += A_dense[m][k] * B[n][k];
+	    // C1 += A1 * B_transpose
+	    // C2 += A2 * B_transpose
+            TREGFILE[dst].data[m][n] += A1_dense[m][k] * B[n][k];
+            TREGFILE[dst+1].data[m][n] += A2_dense[m][k] * B[n][k];
 	  }
 	}
       }
@@ -1234,7 +1337,6 @@ void instrument(INS ins)
     // info->bitmap your routine
     if (INS_Opcode(ins) == XED_ICLASS_TILELOADD)
     {
-      info->num_ld = 16;
 
       REG r = INS_OperandReg (ins, 0);
       UINT32 dst = r - REG_TMM0;
@@ -1244,14 +1346,15 @@ void instrument(INS ins)
         REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
         cout << "sparse_tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
 #endif
-        info->mem_read_size = 32;
-        UINT32 tmp_mem_read_size = 32;
+        info->num_ld = 16;
+        info->mem_read_size = 64;
+        UINT32 tmp_mem_read_size = 64;
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
           IARG_MEMORYOP_EA, 0,
           IARG_UINT32, tmp_mem_read_size,
           IARG_UINT32, tmp_mem_read_size,
   #ifndef PINLINUX
-                        IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
     #endif
           IARG_THREAD_ID, IARG_END);
         
@@ -1272,14 +1375,15 @@ void instrument(INS ins)
         cout << "metadata_tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
 #endif
         // Change the dst address of metadata load to mm
-        info->mem_read_size = 4;
-        UINT32 tmp_mem_read_size = 4;
+        info->num_ld = 1;
+        info->mem_read_size = 64;
+        UINT32 tmp_mem_read_size = 64;
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
           IARG_MEMORYOP_EA, 0,
           IARG_UINT32, tmp_mem_read_size,
           IARG_UINT32, tmp_mem_read_size,
   #ifndef PINLINUX
-                        IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
     #endif
           IARG_THREAD_ID, IARG_END);
 
@@ -1298,12 +1402,48 @@ void instrument(INS ins)
 		       dst,
                        IARG_END);
         INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsUTLOAD(ins)) {
+#ifdef VERBOSE
+        REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
+        REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
+        cout << "tileloadu " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
+#endif
+        // Change the dst address of metadata load to mm
+        info->num_ld = 32;
+        info->mem_read_size = 64;
+        UINT32 tmp_mem_read_size = 64;
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
+          IARG_MEMORYOP_EA, 0,
+          IARG_UINT32, tmp_mem_read_size,
+          IARG_UINT32, tmp_mem_read_size,
+  #ifndef PINLINUX
+          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+    #endif
+          IARG_THREAD_ID, IARG_END);
+
+        info->num_dest_regs = 2;
+        REG r = (REG)INS_OperandReg (ins, 0);
+        UINT32 ra = r - REG_TMM0;
+        assert(0 <= ra && ra < 4);
+        info->dst[0] = ra*2;
+        info->dst[1] = ra*2 + 1;
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoULoad),
+                       IARG_UINT32,
+                       REG(INS_OperandReg(ins, 0)),
+		       IARG_MEMORYOP_EA, 0,
+		       IARG_UINT32,
+		       dst,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
       } else {
 #ifdef VERBOSE
         REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
         REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
         cout << "tileloadd " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
 #endif
+        info->num_ld = 16;
         info->mem_read_size = 64;
         UINT32 tmp_mem_read_size = 64;
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
@@ -1311,9 +1451,9 @@ void instrument(INS ins)
         IARG_UINT32, tmp_mem_read_size,
         IARG_UINT32, tmp_mem_read_size,
   #ifndef PINLINUX
-                      IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+        IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
   #endif
-                      IARG_THREAD_ID, IARG_END);
+        IARG_THREAD_ID, IARG_END);
 
         INS_InsertCall(ins,
                        IPOINT_BEFORE,
@@ -1345,8 +1485,10 @@ void instrument(INS ins)
         cout << "sparse_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
 #endif
         cout << "sparse_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
-        info->src[info->num_read_regs] = info->src[1] - REG_TMM0 + REG_MM0;
-        info->num_read_regs += 1;
+        info->src[info->num_read_regs-1] = dst*2;
+        info->src[info->num_read_regs] = dst*2 + 1;
+        info->src[info->num_read_regs+1] = info->src[1] - REG_TMM0 + REG_MM0;
+        info->num_read_regs += 2;
         
 	// TODO: call sparse TMUL instrumentation routine instead
         INS_InsertCall(ins,
@@ -1401,28 +1543,58 @@ void instrument(INS ins)
       REG indexReg = INS_OperandMemoryIndexReg (ins, 0);
       if (!REG_is_tmm(r)) cout << "opd 1 is not a register" << endl;
       UINT32 src = r - REG_TMM0;
-      cout << "tilestored [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "], " << REG_StringShort(r) << endl;
-      
-      UINT32 tmp_mem_write_size = 64;
-        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea_amx, 
-          IARG_MEMORYOP_EA, 0,
-          IARG_UINT32, tmp_mem_write_size,
-          IARG_UINT32, tmp_mem_write_size,
-  #ifndef PINLINUX
-                        IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
-    #endif
-          IARG_THREAD_ID, IARG_END);
+      if (IsUTSTORE(ins)) {
+	      cout << "tilestoreu [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "], " << REG_StringShort(r) << endl;
+	      
+              info->num_st = 32;
+	      UINT32 tmp_mem_write_size = 64;
+              info->src[0] = src*2;
+              info->src[1] = src*2 + 1;
+              info->num_read_regs += 1;
+	      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea_amx, 
+		  IARG_MEMORYOP_EA, 0,
+		  IARG_UINT32, tmp_mem_write_size,
+		  IARG_UINT32, tmp_mem_write_size,
+	  #ifndef PINLINUX
+	          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+	    #endif
+		  IARG_THREAD_ID, IARG_END);
 
-      INS_InsertCall(ins,
-                       IPOINT_BEFORE,
-                       AFUNPTR(DoStore),
-                       IARG_UINT32,
-                       REG(INS_OperandReg(ins, 1)),
-		       IARG_MEMORYOP_EA, 0,
-		       IARG_UINT32,
-		       src,
-           IARG_THREAD_ID,
-                       IARG_END);
+	      INS_InsertCall(ins,
+			       IPOINT_BEFORE,
+			       AFUNPTR(DoUStore),
+			       IARG_UINT32,
+			       REG(INS_OperandReg(ins, 1)),
+			       IARG_MEMORYOP_EA, 0,
+			       IARG_UINT32,
+			       src,
+		   	       IARG_THREAD_ID,
+			       IARG_END);
+      } else {
+	      cout << "tilestored [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "], " << REG_StringShort(r) << endl;
+	      
+              info->num_st = 16;
+	      UINT32 tmp_mem_write_size = 64;
+		INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea_amx, 
+		  IARG_MEMORYOP_EA, 0,
+		  IARG_UINT32, tmp_mem_write_size,
+		  IARG_UINT32, tmp_mem_write_size,
+	  #ifndef PINLINUX
+	          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+	    #endif
+		  IARG_THREAD_ID, IARG_END);
+
+	      INS_InsertCall(ins,
+			       IPOINT_BEFORE,
+			       AFUNPTR(DoStore),
+			       IARG_UINT32,
+			       REG(INS_OperandReg(ins, 1)),
+			       IARG_MEMORYOP_EA, 0,
+			       IARG_UINT32,
+			       src,
+		               IARG_THREAD_ID,
+			       IARG_END);
+      }
       INS_Delete(ins);
     }
     else if (INS_Mnemonic(ins) == "LDTILECFG")

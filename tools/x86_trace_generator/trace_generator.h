@@ -81,6 +81,7 @@ struct Inst_info
   bool is_fp;               // 1bit
   bool write_flg;           // 1bit
   uint8_t num_ld;           // 2bit
+  uint8_t num_st;           // 2bit
   uint8_t size;             // 5 bit
   uint64_t src_bitmask[3][16]; // For sparsity
   // **** dynamic ****
