@@ -279,22 +279,22 @@ VOID DoMetadataLoad(REG reg, ADDRINT * addr, UINT32 dst)
 #ifdef VERBOSE
     cout << "Emulate loading metadata from addr " << addr << " to meta_" << REG_StringShort(reg) << endl;
 #endif
-    UINT8 buffer[16*32/8];
-    PIN_SafeCopy(&buffer, addr, 16*32*sizeof(UINT8)/8);
-    for (int i = 0; i < 16; i++) {
+    UINT8 buffer[32*32/8];
+    PIN_SafeCopy(&buffer, addr, 32*32*sizeof(UINT8)/8);
+    for (int i = 0; i < 32; i++) {
       UINT32 idx = 0;
       for (int j = 0; j < 4; j++) {
         UINT8 element = buffer[i*4 + j];
-	for (int k = 0; k < 4; k++) {
+        for (int k = 0; k < 4; k++) {
           UINT8 val = element & 0xC0;
-	  TREGFILE[dst].metadata[i][idx] = val >> 6;
-	  element = element << 2;
-	  idx++;
-	}
+          TREGFILE[dst].metadata[i][idx] = val >> 6;
+          element = element << 2;
+          idx++;
+        }
       }
     }
 #ifdef VERBOSE
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 32; i++) {
       for (int j = 0; j < 16; j++) {
         cout << "\t" << *(UINT32*)&TREGFILE[dst].metadata[i][j];
       }
@@ -308,12 +308,12 @@ VOID DoSparseLoad(REG reg, ADDRINT * addr, UINT32 dst)
 #ifdef VERBOSE
     cout << "Emulate loading from addr " << addr << " to " << REG_StringShort(reg) << endl;
 #endif
-    FLT32 buffer[16*8];
-    PIN_SafeCopy(&buffer, addr, 16 * 8 * sizeof(FLT32));
+    FLT32 buffer[16*16];
+    PIN_SafeCopy(&buffer, addr, 256 * sizeof(FLT32));
 #ifdef VERBOSE
     for (int i = 0; i < 16; i++) {
-      for (int j = 0; j < 8; j++) {
-        TREGFILE[dst].data[i][j] = buffer[i * 8 + j];
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[dst].data[i][j] = buffer[i * 16 + j];
         cout << "\t" << *(UINT32*)&TREGFILE[dst].data[i][j];
       }
       cout << endl;
@@ -340,20 +340,22 @@ VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst)
 VOID DoULoad(REG reg, ADDRINT * addr, UINT32 dst)
 {
 #ifdef VERBOSE
-    cout << "Emulate loading from addr " << addr << " to tile registers " << dst << " and " << dst + 1 << endl;
+    cout << "Emulate loading from addr " << addr << " to tile registers " << 2*dst << " and " << 2*dst + 1 << endl;
 #endif
-    PIN_SafeCopy(&(TREGFILE[2*dst].data), addr, 256*sizeof(FLT32));
-    PIN_SafeCopy(&(TREGFILE[2*dst+1].data), addr + 256*sizeof(FLT32), 256*sizeof(FLT32));
+    FLT32 buffer[32*16];
+    PIN_SafeCopy(&buffer, addr, 32 * 16 * sizeof(FLT32));
 #ifdef VERBOSE
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
-        cout << "\t" << *(UINT32*)&TREGFILE[dst].data[i][j];
+        TREGFILE[2*dst].data[i][j] = buffer[i * 16 + j];
+        cout << "\t" << *(UINT32*)&TREGFILE[2*dst].data[i][j];
       }
       cout << endl;
     }
-    for (int i = 0; i < 16; i++) {
+    for (int i = 16; i < 32; i++) {
       for (int j = 0; j < 16; j++) {
-        cout << "\t" << *(UINT32*)&TREGFILE[dst+1].data[i][j];
+        TREGFILE[2*dst+1].data[i-16][j] = buffer[i * 16 + j];
+        cout << "\t" << *(UINT32*)&TREGFILE[2*dst+1].data[i-16][j];
       }
       cout << endl;
     }
@@ -381,18 +383,30 @@ VOID DoUStore(REG reg, ADDRINT * addr, UINT32 src)
 #ifdef VERBOSE
     cout << "Emulate store to addr " << addr << " from tile registers " << src << " and " << src + 1 << endl;
 #endif
-    PIN_SafeCopy(addr, &(TREGFILE[src].data), 256*sizeof(FLT32));
-    PIN_SafeCopy(addr + 256*sizeof(FLT32), &(TREGFILE[src+1].data), 256*sizeof(FLT32));
+    FLT32 buffer[32*16];
+    PIN_SafeCopy(&buffer, TREGFILE[2*src].data, 16 * 16 * sizeof(FLT32));
+    PIN_SafeCopy(&(buffer[256]), TREGFILE[2*src+1].data, 16 * 16 * sizeof(FLT32));
+    PIN_SafeCopy(addr, buffer, 512*sizeof(FLT32));
+    PIN_SafeCopy(&buffer, addr, 32 * 16 * sizeof(FLT32));
 #ifdef VERBOSE
+    cout << "Register 1" << endl;
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
-        cout << "\t" << TREGFILE[src].data[i][j];
+        cout << "\t" << TREGFILE[2*src].data[i][j];
       }
       cout << endl;
     }
+    cout << "Register 2" << endl;
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
-        cout << "\t" << TREGFILE[src+1].data[i][j];
+        cout << "\t" << TREGFILE[2*src+1].data[i][j];
+      }
+      cout << endl;
+    }
+    cout << "Memory" << endl;
+    for (int i = 0; i < 32; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << buffer[i*16+j];
       }
       cout << endl;
     }
@@ -405,7 +419,7 @@ VOID DoZero(UINT32 dst)
       for (i = 0; i < 16; i++) {
         for (j = 0; j < 16; j++) {
             TREGFILE[dst].data[i][j] = 0.0f;
-	}
+        }
       }
 }
 
@@ -414,21 +428,21 @@ VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b)
       int m, k, n;
       FLT32 A[16][32], B[16][32];
       for (int i = 0; i < 16; i++) {
-	UINT32 col = 0, val, left, right;
+        UINT32 col = 0, val, left, right;
         for (int j = 0; j < 16; j++) {
           val = *(UINT32*)&(TREGFILE[a].data[i][j]);
-	  left = (val & 0xffff0000);
-	  right = (val & 0x0000ffff) << 16;
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
           A[i][col] = *(FLT32*)&left;
-	  A[i][col+1] = *(FLT32*)&right;
+          A[i][col+1] = *(FLT32*)&right;
 
           val = *(UINT32*)&(TREGFILE[b].data[i][j]);
-	  left = (val & 0xffff0000);
-	  right = (val & 0x0000ffff) << 16;
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
           B[i][col] = *(FLT32*)&left;
-	  B[i][col+1] = *(FLT32*)&right;
+          B[i][col+1] = *(FLT32*)&right;
 
-	  col += 2;
+          col += 2;
         }
       }
 #ifdef VERBOSE
@@ -450,13 +464,14 @@ VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b)
       for (m = 0; m < 16; m++) {
         for (n = 0; n < 16; n++) {
           for (k = 0; k < 32; k++) {
-	    // C += A * B_transpose
+            // C += A * B_transpose
             //TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][k] * TREGFILE[b].data[n][k];
             TREGFILE[dst].data[m][n] += A[m][k] * B[n][k];
-	  }
-	}
+          }
+        }
       }
 }
+
 
 VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
 {
@@ -467,79 +482,105 @@ VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
           if (j < 16) {
             A1[i][j] = 0;
             A2[i][j] = 0;
-	  }
+          }
           B[i][j] = 0;
           A1_dense[i][j] = 0;
           A2_dense[i][j] = 0;
-	}
+        }
       }
       // expand A1 bf16 to fp32
-      for (int i = 0; i < 16; i++) {
-	UINT32 col = 0, val, left, right;
-        for (int j = 0; j < 8; j++) {
+      for (int i = 0, row = 0; i < 8; i++, row+=2) {
+        UINT32 val, left, right;
+        for (int j = 0, col = 0; j < 8; j++, col+=2) {
           val = *(UINT32*)&(TREGFILE[a].data[i][j]);
-	  left = (val & 0xffff0000);
-	  right = (val & 0x0000ffff) << 16;
-          A1[i][col] = *(FLT32*)&left;   
-	  A1[i][col+1] = *(FLT32*)&right;
-	  col += 2;
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A1[row][col] = *(FLT32*)&left;
+          A1[row][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 8, col = 0; j < 16; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A1[row+1][col] = *(FLT32*)&left;
+          A1[row+1][col+1] = *(FLT32*)&right;
         }
       }
       // expand compressed matrix A1 to A1_dense
       for (int i = 0; i < 16; i++) {
-	UINT32 col = 0;
+        UINT32 col = 0;
         for (int j = 0; j < 16; j++) {
           int idx = TREGFILE[a].metadata[i][j];
           A1_dense[i][col + idx] = A1[i][j];
-	  if (j % 2 == 1) {
+          if (j % 2 == 1) {
             col += 4;
-	  }
-	}
+          }
+        }
       }
       // expand A2 bf16 to fp32
-      for (int i = 0; i < 16; i++) {
-	UINT32 col = 0, val, left, right;
-        for (int j = 8; j < 16; j++) {
+      for (int i = 8, row = 0; i < 16; i++, row+=2) {
+        UINT32 val, left, right;
+        for (int j = 0, col = 0; j < 8; j++, col+=2) {
           val = *(UINT32*)&(TREGFILE[a].data[i][j]);
-	  left = (val & 0xffff0000);
-	  right = (val & 0x0000ffff) << 16;
-          A2[i][col] = *(FLT32*)&left;   
-	  A2[i][col+1] = *(FLT32*)&right;
-	  col += 2;
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A2[row][col] = *(FLT32*)&left;
+          A2[row][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 8, col = 0; j < 16; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A2[row+1][col] = *(FLT32*)&left;
+          A2[row+1][col+1] = *(FLT32*)&right;
         }
       }
       // expand compressed matrix A2 to A2_dense
-      for (int i = 0; i < 16; i++) {
-	UINT32 col = 0;
+      for (int i = 16; i < 32; i++) {
+        UINT32 col = 0;
         for (int j = 0; j < 16; j++) {
           int idx = TREGFILE[a].metadata[i][j];
-          A2_dense[i][col + idx] = A2[i][j];
-	  if (j % 2 == 1) {
+          A2_dense[i-16][col + idx] = A2[i-16][j];
+          if (j % 2 == 1) {
             col += 4;
-	  }
-	}
+          }
+        }
       }
       // expand B bf16 to fp32
       for (int i = 0; i < 16; i++) {
-	UINT32 col = 0, val, left, right;
+        UINT32 col = 0, val, left, right;
         for (int j = 0; j < 16; j++) {
           val = *(UINT32*)&(TREGFILE[b].data[i][j]);
-	  left = (val & 0xffff0000);
-	  right = (val & 0x0000ffff) << 16;
-          B[i][col] = *(FLT32*)&left;   
-	  B[i][col+1] = *(FLT32*)&right;
-	  col += 2;
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;
+          B[i][col+1] = *(FLT32*)&right;
+          col += 2;
         }
       }
 #ifdef VERBOSE
       cout << "\nAFTER CONVERSION: MATRIX A1" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << A1[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX A2" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << A2[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER DECOMPRESSION: MATRIX A1" << endl;
       for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 32; j++) {
           cout << "\t" << A1_dense[i][j];
         }
         cout << endl;
       }
-      cout << "\nAFTER CONVERSION: MATRIX A2" << endl;
+      cout << "\nAFTER DECOMPRESSION: MATRIX A2" << endl;
       for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 32; j++) {
           cout << "\t" << A2_dense[i][j];
@@ -557,15 +598,30 @@ VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
       for (m = 0; m < 16; m++) {
         for (n = 0; n < 16; n++) {
           for (k = 0; k < 32; k++) {
-	    // C1 += A1 * B_transpose
-	    // C2 += A2 * B_transpose
-            TREGFILE[dst].data[m][n] += A1_dense[m][k] * B[n][k];
-            TREGFILE[dst+1].data[m][n] += A2_dense[m][k] * B[n][k];
-	  }
-	}
+            // C1 += A1 * B_transpose
+            // C2 += A2 * B_transpose
+            TREGFILE[2*dst].data[m][n] += A1_dense[m][k] * B[n][k];
+            TREGFILE[2*dst+1].data[m][n] += A2_dense[m][k] * B[n][k];
+          }
+        }
       }
+#ifdef VERBOSE
+      cout << "\nAFTER GEMM: MATRIX C1" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[2*dst].data[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER GEMM: MATRIX C2" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[2*dst+1].data[i][j];
+        }
+        cout << endl;
+      }
+#endif
 }
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 // control handler for pinpoint (simpoint)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
