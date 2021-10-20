@@ -64,7 +64,7 @@ using namespace INSTLIB;
 
 #define DUMMY_THREAD 100000
 
-//#define VERBOSE
+#define VERBOSE
 
 #define THREAD_ENABLE_CHECK(tid)          \
   if ((tid) == DUMMY_THREAD)              \
@@ -162,8 +162,8 @@ Knob(UINT64, Knob_rtn_max, "rmax", "0", "Max number of function calls to collect
 // TODO FIX HERE
 // Dense: 403320 40371d
 // Sparse: 403720 403bbd
-Knob(UINT64, Knob_start_address, "trace_gen_start_address", "0x403320", "Start address");
-Knob(UINT64, Knob_finish_address, "trace_gen_finish_address", "0x40371d", "Finish address");
+Knob(UINT64, Knob_start_address, "trace_gen_start_address", "0x4020e0", "Start address");
+Knob(UINT64, Knob_finish_address, "trace_gen_finish_address", "0x4022b9", "Finish address");
 
 //Knob(UINT64, Knob_start_address, "trace_gen_start_address", "0x403630", "Start address");
 //Knob(UINT64, Knob_finish_address, "trace_gen_finish_address", "0x4039b9", "Finish address");
@@ -1391,7 +1391,8 @@ void instrument(INS ins)
     // AMX Emulation
 
     // info->bitmap your routine
-    if (INS_Opcode(ins) == XED_ICLASS_TILELOADD)
+   // if (INS_Opcode(ins) == XED_ICLASS_TILELOADD)
+    if (INS_Mnemonic(ins) == "TILELOADD")
     {
 
       REG r = INS_OperandReg (ins, 0);
@@ -1626,6 +1627,7 @@ void instrument(INS ins)
 			       src,
 		   	       IARG_THREAD_ID,
 			       IARG_END);
+              INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
       } else {
 	      cout << "tilestored [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "], " << REG_StringShort(r) << endl;
 	      
