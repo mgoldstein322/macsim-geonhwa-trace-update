@@ -220,7 +220,7 @@ BOOL IsMetadataTLOAD(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[3] == 0x4e) {
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4e) {
       return TRUE;
     }
     return FALSE;
@@ -232,7 +232,7 @@ BOOL IsSparseTLOAD(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[3] == 0x4f) {
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4f) {
       return TRUE;
     }
     return FALSE;
@@ -244,7 +244,7 @@ BOOL IsUTLOAD(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[3] == 0x4d) {
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4d) {
       return TRUE;
     }
     return FALSE;
@@ -256,7 +256,7 @@ BOOL IsUTSTORE(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[3] == 0x4c) {
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x4c) {
       return TRUE;
     }
     return FALSE;
@@ -268,7 +268,7 @@ BOOL IsSparseTMUL(INS ins) {
 
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
-    if (opcodeBytes[3] == 0x5a) {
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x5a) {
       return TRUE;
     }
     return FALSE;
@@ -310,15 +310,17 @@ VOID DoSparseLoad(REG reg, ADDRINT * addr, UINT32 dst)
 #endif
     FLT32 buffer[16*16];
     PIN_SafeCopy(&buffer, addr, 256 * sizeof(FLT32));
-#ifdef VERBOSE
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
         TREGFILE[dst].data[i][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
         cout << "\t" << *(UINT32*)&TREGFILE[dst].data[i][j];
-      }
-      cout << endl;
-    }
 #endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
 }
 
 VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst)
@@ -344,22 +346,28 @@ VOID DoULoad(REG reg, ADDRINT * addr, UINT32 dst)
 #endif
     FLT32 buffer[32*16];
     PIN_SafeCopy(&buffer, addr, 32 * 16 * sizeof(FLT32));
-#ifdef VERBOSE
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
         TREGFILE[2*dst].data[i][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
         cout << "\t" << *(UINT32*)&TREGFILE[2*dst].data[i][j];
+#endif
       }
+#ifdef VERBOSE
       cout << endl;
+#endif
     }
     for (int i = 16; i < 32; i++) {
       for (int j = 0; j < 16; j++) {
         TREGFILE[2*dst+1].data[i-16][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
         cout << "\t" << *(UINT32*)&TREGFILE[2*dst+1].data[i-16][j];
-      }
-      cout << endl;
-    }
 #endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
 }
 
 VOID DoStore(REG reg, ADDRINT * addr, UINT32 src)
