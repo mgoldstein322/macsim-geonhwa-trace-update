@@ -262,6 +262,30 @@ BOOL IsUTSTORE(INS ins) {
     return FALSE;
 }
 
+BOOL IsVTLOAD(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x50) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsVTSTORE(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x51) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
 BOOL IsSparseTMUL(INS ins) {
 
     UINT8 opcodeBytes[15];
@@ -269,6 +293,42 @@ BOOL IsSparseTMUL(INS ins) {
     PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
 
     if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x5a) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsSparse14TMUL(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x59) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsSparseKTMUL(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x5d) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL IsSparseK14TMUL(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x5b) {
       return TRUE;
     }
     return FALSE;
@@ -328,15 +388,19 @@ VOID DoLoad(REG reg, ADDRINT * addr, UINT32 dst)
 #ifdef VERBOSE
     cout << "Emulate loading from addr " << addr << " to " << REG_StringShort(reg) << endl;
 #endif
-    PIN_SafeCopy(&(TREGFILE[dst].data), addr, 256*sizeof(FLT32));
-#ifdef VERBOSE
+    FLT32 buffer[16*16];
+    PIN_SafeCopy(&buffer, addr, 256 * sizeof(FLT32));
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
+        TREGFILE[dst].data[i][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
         cout << "\t" << *(UINT32*)&TREGFILE[dst].data[i][j];
-      }
-      cout << endl;
-    }
 #endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
 }
 
 VOID DoULoad(REG reg, ADDRINT * addr, UINT32 dst)
@@ -370,6 +434,59 @@ VOID DoULoad(REG reg, ADDRINT * addr, UINT32 dst)
     }
 }
 
+VOID DoVLoad(REG reg, ADDRINT * addr, UINT32 dst)
+{
+#ifdef VERBOSE
+    cout << "Emulate loading from addr " << addr << " to tile registers " << 4*dst << ", " << 4*dst+1 << ", " << 4*dst+2 << " and " << 4*dst+3 << endl;
+#endif
+    FLT32 buffer[64*16];
+    PIN_SafeCopy(&buffer, addr, 64 * 16 * sizeof(FLT32));
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst].data[i][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst].data[i][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+    for (int i = 16; i < 32; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst+1].data[i-16][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst+1].data[i-16][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+    for (int i = 32; i < 48; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst+2].data[i-32][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst+2].data[i-32][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+    for (int i = 48; i < 64; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst+3].data[i-48][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst+3].data[i-48][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+}
+
 VOID DoStore(REG reg, ADDRINT * addr, UINT32 src)
 {
 #ifdef VERBOSE
@@ -380,6 +497,57 @@ VOID DoStore(REG reg, ADDRINT * addr, UINT32 src)
     for (int i = 0; i < 16; i++) {
       for (int j = 0; j < 16; j++) {
         cout << "\t" << TREGFILE[src].data[i][j];
+      }
+      cout << endl;
+    }
+#endif
+}
+
+VOID DoVStore(REG reg, ADDRINT * addr, UINT32 src)
+{
+#ifdef VERBOSE
+    cout << "Emulate store to addr " << addr << " from tile registers " << src << ", " << src + 1 << ", " << src + 2 << " and " << src + 3 << endl;
+#endif
+    FLT32 buffer[64*16];
+    PIN_SafeCopy(&buffer, TREGFILE[4*src].data, 16 * 16 * sizeof(FLT32));
+    PIN_SafeCopy(&(buffer[256]), TREGFILE[4*src+1].data, 16 * 16 * sizeof(FLT32));
+    PIN_SafeCopy(&(buffer[512]), TREGFILE[4*src+2].data, 16 * 16 * sizeof(FLT32));
+    PIN_SafeCopy(&(buffer[768]), TREGFILE[4*src+3].data, 16 * 16 * sizeof(FLT32));
+    PIN_SafeCopy(addr, buffer, 1024*sizeof(FLT32));
+    PIN_SafeCopy(&buffer, addr, 64 * 16 * sizeof(FLT32));
+#ifdef VERBOSE
+    cout << "Register 1" << endl;
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[4*src].data[i][j];
+      }
+      cout << endl;
+    }
+    cout << "Register 2" << endl;
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[4*src+1].data[i][j];
+      }
+      cout << endl;
+    }
+    cout << "Register 3" << endl;
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[4*src+2].data[i][j];
+      }
+      cout << endl;
+    }
+    cout << "Register 4" << endl;
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << TREGFILE[4*src+3].data[i][j];
+      }
+      cout << endl;
+    }
+    cout << "Memory" << endl;
+    for (int i = 0; i < 64; i++) {
+      for (int j = 0; j < 16; j++) {
+        cout << "\t" << buffer[i*16+j];
       }
       cout << endl;
     }
@@ -430,56 +598,6 @@ VOID DoZero(UINT32 dst)
         }
       }
 }
-
-VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b)
-{
-      int m, k, n;
-      FLT32 A[16][32], B[16][32];
-      for (int i = 0; i < 16; i++) {
-        UINT32 col = 0, val, left, right;
-        for (int j = 0; j < 16; j++) {
-          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
-          left = (val & 0xffff0000);
-          right = (val & 0x0000ffff) << 16;
-          A[i][col] = *(FLT32*)&left;
-          A[i][col+1] = *(FLT32*)&right;
-
-          val = *(UINT32*)&(TREGFILE[b].data[i][j]);
-          left = (val & 0xffff0000);
-          right = (val & 0x0000ffff) << 16;
-          B[i][col] = *(FLT32*)&left;
-          B[i][col+1] = *(FLT32*)&right;
-
-          col += 2;
-        }
-      }
-#ifdef VERBOSE
-      cout << "\nAFTER CONVERSION: MATRIX A" << endl;
-      for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 32; j++) {
-          cout << "\t" << A[i][j];
-        }
-        cout << endl;
-      }
-      cout << "\nAFTER CONVERSION: MATRIX B" << endl;
-      for (int i = 0; i < 16; i++) {
-        for (int j = 0; j < 32; j++) {
-          cout << "\t" << B[i][j];
-        }
-        cout << endl;
-      }
-#endif
-      for (m = 0; m < 16; m++) {
-        for (n = 0; n < 16; n++) {
-          for (k = 0; k < 32; k++) {
-            // C += A * B_transpose
-            //TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][k] * TREGFILE[b].data[n][k];
-            TREGFILE[dst].data[m][n] += A[m][k] * B[n][k];
-          }
-        }
-      }
-}
-
 
 VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
 {
@@ -630,6 +748,638 @@ VOID DoSparseGEMM(UINT32 dst, UINT32 a, UINT32 b)
       }
 #endif
 }
+
+VOID DoGEMM(UINT32 dst, UINT32 a, UINT32 b)
+{
+      int m, k, n;
+      FLT32 A[16][32], B[16][32];
+      for (int i = 0; i < 16; i++) {
+        UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A[i][col] = *(FLT32*)&left;
+          A[i][col+1] = *(FLT32*)&right;
+
+          val = *(UINT32*)&(TREGFILE[b].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;
+          B[i][col+1] = *(FLT32*)&right;
+
+          col += 2;
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER CONVERSION: MATRIX A" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX B" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << B[i][j];
+        }
+        cout << endl;
+      }
+#endif
+      for (m = 0; m < 16; m++) {
+        for (n = 0; n < 16; n++) {
+          for (k = 0; k < 32; k++) {
+            // C += A * B_transpose
+            //TREGFILE[dst].data[m][n] += TREGFILE[a].data[m][k] * TREGFILE[b].data[n][k];
+            TREGFILE[dst].data[m][n] += A[m][k] * B[n][k];
+          }
+        }
+      }
+}
+
+VOID DoSparseKGEMM(UINT32 dst, UINT32 a, UINT32 b)
+{
+      int m, k, n;
+      FLT32 A[16][32], B[16][64], A_dense[32][32], A_final[16][64];
+      for (int i = 0; i < 32; i++) {
+        for (int j = 0; j < 32; j++) {
+          A_dense[i][j] = 0;
+	}
+      }
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 64; j++) {
+          if (j < 32) {
+            A[i][j] = 0;
+          }
+          B[i][j] = 0;
+        }
+      }
+      // expand B bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+        UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[2*b].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;
+          B[i][col+1] = *(FLT32*)&right;
+          col += 2;
+        }
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[2*b+1].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;
+          B[i][col+1] = *(FLT32*)&right;
+          col += 2;
+        }
+      }
+      // expand A bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+        UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A[i][col] = *(FLT32*)&left;
+          A[i][col+1] = *(FLT32*)&right;
+          col += 2;
+        }
+      }
+      // expand compressed matrix A to A_dense
+      for (int i = 0, row = 0; i < 16; i++) {
+        UINT32 col = 0;
+        for (int j = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[row][j];
+          A_dense[row][col + idx] = A[i][j];
+          if (j % 2 == 1) {
+            col += 4;
+          }
+        }
+	col = 0;
+        for (int j = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[row+1][j];
+          A_dense[row+1][col + idx] = A[i][j+16];
+          if (j % 2 == 1) {
+            col += 4;
+          }
+        }
+	row += 2;
+      }
+      // convert A_dense to A_final
+      for (int i = 0, row = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          A_final[i][j] = A_dense[row][j];
+        }
+        for (int j = 32; j < 64; j++) {
+          A_final[i][j] = A_dense[row+1][j-32];
+        }
+	row+=2;
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER CONVERSION: MATRIX A" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER DECOMPRESSION: MATRIX A" << endl;
+      for (int i = 0; i < 32; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER FINAL: MATRIX A" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 64; j++) {
+          cout << "\t" << A_final[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX B" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 64; j++) {
+          cout << "\t" << B[i][j];
+        }
+        cout << endl;
+      }
+#endif
+      for (m = 0; m < 16; m++) {
+        for (n = 0; n < 16; n++) {
+          for (k = 0; k < 64; k++) {
+            // C += A * B_transpose
+            TREGFILE[dst].data[m][n] += A_final[m][k] * B[n][k];
+          }
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER GEMM: MATRIX C" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[dst].data[i][j];
+        }
+        cout << endl;
+      }
+#endif
+}
+
+//TODO
+VOID DoSparseK14GEMM(UINT32 dst, UINT32 a, UINT32 b)
+{
+      FLT32 A[16][32], A_dense[16][128];
+      FLT32 B[16][128];
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 128; j++) {
+          if (j < 32) {
+            A[i][j] = 0;
+          }
+          B[i][j] = 0;
+          A_dense[i][j] = 0;
+        }
+      }
+      // expand B bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+        UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 64; j++) {
+	  if (j < 16)
+            val = *(UINT32*)&(TREGFILE[4*b].data[i][j]);
+	  else if (j < 32)
+            val = *(UINT32*)&(TREGFILE[4*b+1].data[i][j-16]);
+	  else if (j < 48)
+            val = *(UINT32*)&(TREGFILE[4*b+2].data[i][j-32]);
+	  else if (j < 64)
+            val = *(UINT32*)&(TREGFILE[4*b+3].data[i][j-48]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;
+          B[i][col+1] = *(FLT32*)&right;
+          col += 2;
+        }
+      }
+      // expand A bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+        UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A[i][col] = *(FLT32*)&left;
+          A[i][col+1] = *(FLT32*)&right;
+          col += 2;
+        }
+      }
+      // expand compressed matrix A to A_dense
+      for (int i = 0, row = 0; i < 16; i++) {
+        UINT32 col = 0;
+        for (int j = 0; j < 32; j++) {
+	  int idx;
+	  if (j < 16)
+	    idx = TREGFILE[a].metadata[row][j];
+	  else
+	    idx = TREGFILE[a].metadata[row+1][j-16];
+          A_dense[i][col + idx] = A[i][j];
+          col += 4;
+        }
+	row += 2;
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER CONVERSION: MATRIX A" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER DECOMPRESSION: MATRIX A" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 128; j++) {
+          cout << "\t" << A_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX B" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 128; j++) {
+          cout << "\t" << B[i][j];
+        }
+        cout << endl;
+      }
+#endif
+      for (int m = 0; m < 16; m++) {
+        for (int n = 0; n < 16; n++) {
+          for (int k = 0; k < 128; k++) {
+            // C += A * B_transpose
+            TREGFILE[dst].data[m][n] += A_dense[m][k] * B[n][k];
+          }
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER GEMM: MATRIX C" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[dst].data[i][j];
+        }
+        cout << endl;
+      }
+#endif
+}
+
+VOID DoSparse14GEMM(UINT32 dst, UINT32 a, UINT32 b)
+{
+      int m, k, n;
+      FLT32 A1[16][8], A2[16][8], A3[16][8], A4[16][8], B[16][32], A1_dense[16][32], A2_dense[16][32], A3_dense[16][32], A4_dense[16][32];
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          if (j < 8) {
+            A1[i][j] = 0;
+            A2[i][j] = 0;
+            A3[i][j] = 0;
+            A4[i][j] = 0;
+          }
+          B[i][j] = 0;
+          A1_dense[i][j] = 0;
+          A2_dense[i][j] = 0;
+          A3_dense[i][j] = 0;
+          A4_dense[i][j] = 0;
+        }
+      }
+      // expand B bf16 to fp32
+      for (int i = 0; i < 16; i++) {
+        UINT32 col = 0, val, left, right;
+        for (int j = 0; j < 16; j++) {
+          val = *(UINT32*)&(TREGFILE[b].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          B[i][col] = *(FLT32*)&left;
+          B[i][col+1] = *(FLT32*)&right;
+          col += 2;
+        }
+      }
+      // expand A1 bf16 to fp32
+      for (int i = 0, row = 0; i < 4; i++, row+=4) {
+        UINT32 val, left, right;
+        for (int j = 0, col = 0; j < 4; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A1[row][col] = *(FLT32*)&left;
+          A1[row][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 4, col = 0; j < 8; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A1[row+1][col] = *(FLT32*)&left;
+          A1[row+1][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 8, col = 0; j < 12; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A1[row+2][col] = *(FLT32*)&left;
+          A1[row+2][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 12, col = 0; j < 16; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A1[row+3][col] = *(FLT32*)&left;
+          A1[row+3][col+1] = *(FLT32*)&right;
+        }
+      }
+      // expand A2 bf16 to fp32
+      for (int i = 4, row = 0; i < 8; i++, row+=4) {
+        UINT32 val, left, right;
+        for (int j = 0, col = 0; j < 4; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A2[row][col] = *(FLT32*)&left;
+          A2[row][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 4, col = 0; j < 8; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A2[row+1][col] = *(FLT32*)&left;
+          A2[row+1][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 8, col = 0; j < 12; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A2[row+2][col] = *(FLT32*)&left;
+          A2[row+2][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 12, col = 0; j < 16; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A2[row+3][col] = *(FLT32*)&left;
+          A2[row+3][col+1] = *(FLT32*)&right;
+        }
+      }
+      // expand A3 bf16 to fp32
+      for (int i = 8, row = 0; i < 12; i++, row+=4) {
+        UINT32 val, left, right;
+        for (int j = 0, col = 0; j < 4; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A3[row][col] = *(FLT32*)&left;
+          A3[row][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 4, col = 0; j < 8; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A3[row+1][col] = *(FLT32*)&left;
+          A3[row+1][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 8, col = 0; j < 12; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A3[row+2][col] = *(FLT32*)&left;
+          A3[row+2][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 12, col = 0; j < 16; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A3[row+3][col] = *(FLT32*)&left;
+          A3[row+3][col+1] = *(FLT32*)&right;
+        }
+      }
+      // expand A4 bf16 to fp32
+      for (int i = 12, row = 0; i < 16; i++, row+=4) {
+        UINT32 val, left, right;
+        for (int j = 0, col = 0; j < 4; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A4[row][col] = *(FLT32*)&left;
+          A4[row][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 4, col = 0; j < 8; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A4[row+1][col] = *(FLT32*)&left;
+          A4[row+1][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 8, col = 0; j < 12; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A4[row+2][col] = *(FLT32*)&left;
+          A4[row+2][col+1] = *(FLT32*)&right;
+        }
+        for (int j = 12, col = 0; j < 16; j++, col+=2) {
+          val = *(UINT32*)&(TREGFILE[a].data[i][j]);
+          left = (val & 0xffff0000);
+          right = (val & 0x0000ffff) << 16;
+          A4[row+3][col] = *(FLT32*)&left;
+          A4[row+3][col+1] = *(FLT32*)&right;
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER CONVERSION: MATRIX B" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << B[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX A1" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 8; j++) {
+          cout << "\t" << A1[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX A2" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 8; j++) {
+          cout << "\t" << A2[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX A3" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 8; j++) {
+          cout << "\t" << A3[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER CONVERSION: MATRIX A4" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 8; j++) {
+          cout << "\t" << A4[i][j];
+        }
+        cout << endl;
+      }
+#endif
+      // expand compressed matrix A1 to A1_dense
+      for (int i = 0, row = 0; i < 8; i++, row+=2) {
+        for (int j = 0, col = 0; j < 8; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A1_dense[row][col + idx] = A1[row][j];
+          col += 4;
+        }
+        for (int j = 8, col = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A1_dense[row+1][col + idx] = A1[row+1][j-8];
+          col += 4;
+        }
+      }
+      // expand compressed matrix A2 to A2_dense
+      for (int i = 8, row = 0; i < 16; i++, row+=2) {
+        for (int j = 0, col = 0; j < 8; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A2_dense[row][col + idx] = A2[row][j];
+          col += 4;
+        }
+        for (int j = 8, col = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A2_dense[row+1][col + idx] = A2[row+1][j-8];
+          col += 4;
+        }
+      }
+      // expand compressed matrix A3 to A3_dense
+      for (int i = 16, row = 0; i < 24; i++, row+=2) {
+        for (int j = 0, col = 0; j < 8; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A3_dense[row][col + idx] = A3[row][j];
+          col += 4;
+        }
+        for (int j = 8, col = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A3_dense[row+1][col + idx] = A3[row+1][j-8];
+          col += 4;
+        }
+      }
+      // expand compressed matrix A4 to A4_dense
+      for (int i = 24, row = 0; i < 32; i++, row+=2) {
+        for (int j = 0, col = 0; j < 8; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A4_dense[row][col + idx] = A4[row][j];
+          col += 4;
+        }
+        for (int j = 8, col = 0; j < 16; j++) {
+          int idx = TREGFILE[a].metadata[i][j];
+          A4_dense[row+1][col + idx] = A4[row+1][j-8];
+          col += 4;
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER DECOMPRESSION: MATRIX A1" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A1_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER DECOMPRESSION: MATRIX A2" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A2_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER DECOMPRESSION: MATRIX A3" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A3_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER DECOMPRESSION: MATRIX A4" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 32; j++) {
+          cout << "\t" << A4_dense[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nBEFORE GEMM: MATRIX C1" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst].data[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nBEFORE GEMM: MATRIX C2" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst+1].data[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nBEFORE GEMM: MATRIX C3" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst+2].data[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nBEFORE GEMM: MATRIX C4" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst+3].data[i][j];
+        }
+        cout << endl;
+      }
+#endif
+      // TODO: FIX
+      for (m = 0; m < 16; m++) {
+        for (n = 0; n < 16; n++) {
+          for (k = 0; k < 32; k++) {
+            // C1 += A1 * B_transpose
+            // C2 += A2 * B_transpose
+            // C3 += A3 * B_transpose
+            // C4 += A4 * B_transpose
+            TREGFILE[4*dst].data[m][n] += A1_dense[m][k] * B[n][k];
+            TREGFILE[4*dst+1].data[m][n] += A2_dense[m][k] * B[n][k];
+            TREGFILE[4*dst+2].data[m][n] += A3_dense[m][k] * B[n][k];
+            TREGFILE[4*dst+3].data[m][n] += A4_dense[m][k] * B[n][k];
+          }
+        }
+      }
+#ifdef VERBOSE
+      cout << "\nAFTER GEMM: MATRIX C1" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst].data[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER GEMM: MATRIX C2" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst+1].data[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER GEMM: MATRIX C3" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst+2].data[i][j];
+        }
+        cout << endl;
+      }
+      cout << "\nAFTER GEMM: MATRIX C4" << endl;
+      for (int i = 0; i < 16; i++) {
+        for (int j = 0; j < 16; j++) {
+          cout << "\t" << TREGFILE[4*dst+3].data[i][j];
+        }
+        cout << endl;
+      }
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 // control handler for pinpoint (simpoint)
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1502,6 +2252,43 @@ void instrument(INS ins)
 		       dst,
                        IARG_END);
         INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsVTLOAD(ins)) {
+#ifdef VERBOSE
+        REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
+        REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
+        cout << "tileloadv " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
+#endif
+        // Change the dst address of metadata load to mm
+        info->num_ld = 64;
+        info->mem_read_size = 128;
+        UINT32 tmp_mem_read_size = 128;
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
+          IARG_MEMORYOP_EA, 0,
+          IARG_UINT32, tmp_mem_read_size,
+          IARG_UINT32, tmp_mem_read_size,
+  #ifndef PINLINUX
+          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+    #endif
+          IARG_THREAD_ID, IARG_END);
+
+        info->num_dest_regs = 4;
+        REG r = (REG)INS_OperandReg (ins, 0);
+        UINT32 ra = r - REG_TMM0;
+        assert(0 <= ra && ra < 2);
+        info->dst[0] = ra*4;
+	info->dst[1] = ra*4 + 1;
+	info->dst[2] = ra*4 + 2;
+        info->dst[3] = ra*4 + 3;
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoVLoad),
+                       IARG_UINT32,
+                       REG(INS_OperandReg(ins, 0)),
+		       IARG_MEMORYOP_EA, 0,
+		       IARG_UINT32,
+		       dst,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
       } else {
 #ifdef VERBOSE
         REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
@@ -1549,16 +2336,78 @@ void instrument(INS ins)
 #ifdef VERBOSE
         cout << "sparse_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
 #endif
-        cout << "sparse_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
         info->src[info->num_read_regs-1] = dst*2;
         info->src[info->num_read_regs] = dst*2 + 1;
         info->src[info->num_read_regs+1] = info->src[1] - REG_TMM0 + REG_MM0;
         info->num_read_regs += 2;
         
-	// TODO: call sparse TMUL instrumentation routine instead
         INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoSparseGEMM),
+		       IARG_UINT32,
+		       dst,
+		       IARG_UINT32,
+		       a,
+		       IARG_UINT32,
+		       b,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsSparse14TMUL(ins)) {
+#ifdef VERBOSE
+        cout << "sparse14_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+#endif
+        info->src[info->num_read_regs-1] = dst*4;
+        info->src[info->num_read_regs] = dst*4 + 1;
+        info->src[info->num_read_regs+1] = dst*4 + 2;
+        info->src[info->num_read_regs+2] = dst*4 + 3;
+        info->src[info->num_read_regs+3] = info->src[1] - REG_TMM0 + REG_MM0;
+        info->num_read_regs += 4;
+        
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoSparse14GEMM),
+		       IARG_UINT32,
+		       dst,
+		       IARG_UINT32,
+		       a,
+		       IARG_UINT32,
+		       b,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsSparseKTMUL(ins)) {
+#ifdef VERBOSE
+        cout << "sparsek_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+#endif
+        info->src[info->num_read_regs-1] = dst*2;
+        info->src[info->num_read_regs] = dst*2 + 1;
+        info->src[info->num_read_regs+1] = info->src[1] - REG_TMM0 + REG_MM0;
+        info->num_read_regs += 2;
+        
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoSparseKGEMM),
+		       IARG_UINT32,
+		       dst,
+		       IARG_UINT32,
+		       a,
+		       IARG_UINT32,
+		       b,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsSparseK14TMUL(ins)) {
+#ifdef VERBOSE
+        cout << "sparsek14_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+#endif
+        info->src[info->num_read_regs-1] = dst*4;
+        info->src[info->num_read_regs] = dst*4 + 1;
+        info->src[info->num_read_regs+1] = dst*4 + 2;
+        info->src[info->num_read_regs+2] = dst*4 + 3;
+        info->src[info->num_read_regs+3] = info->src[1] - REG_TMM0 + REG_MM0;
+        info->num_read_regs += 4;
+        
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoSparseK14GEMM),
 		       IARG_UINT32,
 		       dst,
 		       IARG_UINT32,
@@ -1628,6 +2477,36 @@ void instrument(INS ins)
 	      INS_InsertCall(ins,
 			       IPOINT_BEFORE,
 			       AFUNPTR(DoUStore),
+			       IARG_UINT32,
+			       REG(INS_OperandReg(ins, 1)),
+			       IARG_MEMORYOP_EA, 0,
+			       IARG_UINT32,
+			       src,
+		   	       IARG_THREAD_ID,
+			       IARG_END);
+              INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsVTSTORE(ins)) {
+	      cout << "tilestorev [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "], " << REG_StringShort(r) << endl;
+	      
+              info->num_st = 64;
+	      UINT32 tmp_mem_write_size = 128;
+              info->src[0] = src*4;
+              info->src[1] = src*4 + 1;
+              info->src[2] = src*4 + 2;
+              info->src[3] = src*4 + 3;
+              info->num_read_regs += 3;
+	      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea_amx, 
+		  IARG_MEMORYOP_EA, 0,
+		  IARG_UINT32, tmp_mem_write_size,
+		  IARG_UINT32, tmp_mem_write_size,
+	  #ifndef PINLINUX
+	          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+	    #endif
+		  IARG_THREAD_ID, IARG_END);
+
+	      INS_InsertCall(ins,
+			       IPOINT_BEFORE,
+			       AFUNPTR(DoVStore),
 			       IARG_UINT32,
 			       REG(INS_OperandReg(ins, 1)),
 			       IARG_MEMORYOP_EA, 0,
