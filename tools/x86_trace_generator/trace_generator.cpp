@@ -64,7 +64,7 @@ using namespace INSTLIB;
 
 #define DUMMY_THREAD 100000
 
-#define VERBOSE
+//#define VERBOSE
 
 #define THREAD_ENABLE_CHECK(tid)          \
   if ((tid) == DUMMY_THREAD)              \
@@ -2240,8 +2240,8 @@ void instrument(INS ins)
         REG r = (REG)INS_OperandReg (ins, 0);
         UINT32 ra = r - REG_TMM0;
         assert(0 <= ra && ra < 4);
-        info->dst[0] = ra*2;
-        info->dst[1] = ra*2 + 1;
+        info->dst[0] = REG_TMM0 + ra*2;
+        info->dst[1] = REG_TMM0 + ra*2 + 1;
         INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoULoad),
@@ -2275,10 +2275,10 @@ void instrument(INS ins)
         REG r = (REG)INS_OperandReg (ins, 0);
         UINT32 ra = r - REG_TMM0;
         assert(0 <= ra && ra < 2);
-        info->dst[0] = ra*4;
-	info->dst[1] = ra*4 + 1;
-	info->dst[2] = ra*4 + 2;
-        info->dst[3] = ra*4 + 3;
+        info->dst[0] = REG_TMM0 + ra*4;
+        info->dst[1] = REG_TMM0 + ra*4 + 1;
+        info->dst[2] = REG_TMM0 + ra*4 + 2;
+        info->dst[3] = REG_TMM0 + ra*4 + 3;
         INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoVLoad),
@@ -2330,14 +2330,14 @@ void instrument(INS ins)
       if (!REG_is_tmm(ra)) cout << "opd 1 is not a register" << endl;
       if (!REG_is_tmm(rb)) cout << "opd 2 is not a register" << endl;
       UINT32 dst = r - REG_TMM0;
-      UINT32 a = ra - REG_TMM0;
-      UINT32 b = rb - REG_TMM0;
+      UINT32 a = ra - REG_TMM0; 
+      UINT32 b = rb - REG_TMM0; 
       if (IsSparseTMUL(ins)) {
 #ifdef VERBOSE
         cout << "sparse_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
 #endif
-        info->src[info->num_read_regs-1] = dst*2;
-        info->src[info->num_read_regs] = dst*2 + 1;
+        info->src[info->num_read_regs-1] = REG_TMM0 + dst*2;
+        info->src[info->num_read_regs] = REG_TMM0 + dst*2 + 1;
         info->src[info->num_read_regs+1] = info->src[1] - REG_TMM0 + REG_MM0;
         info->num_read_regs += 2;
         
@@ -2356,10 +2356,10 @@ void instrument(INS ins)
 #ifdef VERBOSE
         cout << "sparse14_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
 #endif
-        info->src[info->num_read_regs-1] = dst*4;
-        info->src[info->num_read_regs] = dst*4 + 1;
-        info->src[info->num_read_regs+1] = dst*4 + 2;
-        info->src[info->num_read_regs+2] = dst*4 + 3;
+        info->src[info->num_read_regs-1] = REG_TMM0 + dst*4;
+        info->src[info->num_read_regs] = REG_TMM0 + dst*4 + 1;
+        info->src[info->num_read_regs+1] = REG_TMM0 + dst*4 + 2;
+        info->src[info->num_read_regs+2] = REG_TMM0 + dst*4 + 3;
         info->src[info->num_read_regs+3] = info->src[1] - REG_TMM0 + REG_MM0;
         info->num_read_regs += 4;
         
@@ -2377,12 +2377,39 @@ void instrument(INS ins)
       } else if (IsSparseKTMUL(ins)) {
 #ifdef VERBOSE
         cout << "sparsek_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
+        cout << " " << info->src[0] << ", " << info->src[1] << endl;
 #endif
-        info->src[info->num_read_regs-1] = dst*2;
-        info->src[info->num_read_regs] = dst*2 + 1;
+        //UINT32 dst = r - REG_TMM0;
+        //UINT32 a = ra - REG_TMM0;
+        //UINT32 b = rb - REG_TMM0;
+        // 1 4 0
+        // 4 1 0 1
+        // this means ummM, tmmN, tmmM (B A C)
+        info->num_read_regs = 5;
+        info->src[0] = a + REG_TMM0;
+        info->src[1] = dst + REG_TMM0;
+        info->src[2] = b*2 + REG_TMM0;
+        info->src[3] = b*2 + 1 + REG_TMM0;
+        info->src[4] = a + REG_MM0;
+        info->dst[0] = dst + REG_TMM0;
+        
+        /*
+        if(info->num_read_regs == 2){
+          info->src[info->num_read_regs] = info->src[0];
+          info->num_read_regs++;
+        }
+        assert(info->num_read_regs == 3);
+        // Swap the order of src from BAC to CAB
+        UINT32 tmp = info->src[info->num_read_regs-1];
+        info->src[info->num_read_regs-1] = info->src[0];
+        info->src[0] = tmp;
+
+        // Now change umm to tmms
+        info->src[info->num_read_regs-1] = REG_TMM0 + dst*2;
+        info->src[info->num_read_regs] = REG_TMM0 + dst*2 + 1;
         info->src[info->num_read_regs+1] = info->src[1] - REG_TMM0 + REG_MM0;
         info->num_read_regs += 2;
-        
+        */
         INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoSparseKGEMM),
@@ -2398,13 +2425,20 @@ void instrument(INS ins)
 #ifdef VERBOSE
         cout << "sparsek14_tdpbf16ps " << REG_StringShort(r) << ", " << REG_StringShort(ra) << ", " << REG_StringShort(rb) << endl;
 #endif
-        info->src[info->num_read_regs-1] = dst*4;
-        info->src[info->num_read_regs] = dst*4 + 1;
-        info->src[info->num_read_regs+1] = dst*4 + 2;
-        info->src[info->num_read_regs+2] = dst*4 + 3;
-        info->src[info->num_read_regs+3] = info->src[1] - REG_TMM0 + REG_MM0;
-        info->num_read_regs += 4;
+        //UINT32 dst = r - REG_TMM0; // tmm1
+        //UINT32 a = ra - REG_TMM0; // tmm3
+        //UINT32 b = rb - REG_TMM0; // vmm1
+        info->num_read_regs = 7;
+        info->src[0] = a + REG_TMM0;
+        info->src[1] = dst + REG_TMM0;
+        info->src[2] = b*4 + REG_TMM0;
+        info->src[3] = b*4 + 1 + REG_TMM0;
+        info->src[4] = b*4 + 2 + REG_TMM0;
+        info->src[5] = b*4 + 3 + REG_TMM0;
+        info->src[6] = a + REG_MM0;
+        info->dst[0] = dst + REG_TMM0;
         
+
         INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoSparseK14GEMM),
@@ -2462,8 +2496,8 @@ void instrument(INS ins)
 	      
               info->num_st = 32;
 	      UINT32 tmp_mem_write_size = 64;
-              info->src[0] = src*2;
-              info->src[1] = src*2 + 1;
+              info->src[0] = REG_TMM0 + src*2;
+              info->src[1] = REG_TMM0 + src*2 + 1;
               info->num_read_regs += 1;
 	      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea_amx, 
 		  IARG_MEMORYOP_EA, 0,
@@ -2490,10 +2524,10 @@ void instrument(INS ins)
 	      
               info->num_st = 64;
 	      UINT32 tmp_mem_write_size = 128;
-              info->src[0] = src*4;
-              info->src[1] = src*4 + 1;
-              info->src[2] = src*4 + 2;
-              info->src[3] = src*4 + 3;
+              info->src[0] = REG_TMM0 + src*4;
+              info->src[1] = REG_TMM0 + src*4 + 1;
+              info->src[2] = REG_TMM0 + src*4 + 2;
+              info->src[3] = REG_TMM0 + src*4 + 3;
               info->num_read_regs += 3;
 	      INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_st_ea_amx, 
 		  IARG_MEMORYOP_EA, 0,
@@ -2894,7 +2928,7 @@ void write_inst_to_file(ofstream *file, Inst_info *t_info)
   (*file) << "t_info->uop_opcode " << tr_opcode_names[(uint32_t)t_info->opcode] << endl;
   (*file) << "t_info->num_read_regs: " << dec << (uint32_t)t_info->num_read_regs << endl;
   (*file) << "t_info->num_dest_regs: " << dec << (uint32_t)t_info->num_dest_regs << endl;
-  for (UINT32 ii = 0; ii < 4; ++ii)
+  for (UINT32 ii = 0; ii < t_info->num_read_regs; ++ii)
   {
     if (t_info->src[ii] != 0)
     {
@@ -2944,7 +2978,7 @@ void dprint_inst(ADDRINT iaddr, string *disassemble_info, THREADID threadid)
   cout << "t_info->uop_opcode " << tr_opcode_names[(uint32_t)t_info->opcode] << endl;
   cout << "t_info->num_read_regs: " << hex << (uint32_t)t_info->num_read_regs << endl;
   cout << "t_info->num_dest_regs: " << hex << (uint32_t)t_info->num_dest_regs << endl;
-  for (UINT32 ii = 0; ii < 4; ++ii)
+  for (UINT32 ii = 0; ii < t_info->num_read_regs; ++ii)
   {
     if (t_info->src[ii] != 0)
     {
