@@ -274,6 +274,18 @@ BOOL IsVTLOAD(INS ins) {
     return FALSE;
 }
 
+BOOL IsV2TLOAD(INS ins) {
+
+    UINT8 opcodeBytes[15];
+
+    PIN_SafeCopy(&opcodeBytes[0], (void *)INS_NextAddress(ins), INS_Size(ins));
+
+    if (opcodeBytes[0] == 0xc4 && opcodeBytes[3] == 0x51) {
+      return TRUE;
+    }
+    return FALSE;
+}
+
 BOOL IsVTSTORE(INS ins) {
 
     UINT8 opcodeBytes[15];
@@ -477,6 +489,59 @@ VOID DoVLoad(REG reg, ADDRINT * addr, UINT32 dst)
     for (int i = 48; i < 64; i++) {
       for (int j = 0; j < 16; j++) {
         TREGFILE[4*dst+3].data[i-48][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst+3].data[i-48][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+}
+
+VOID DoV2Load(REG reg, ADDRINT * addr, UINT32 dst)
+{
+#ifdef VERBOSE
+    cout << "Emulate loading from addr " << addr << " to tile registers " << 4*dst << ", " << 4*dst+1 << ", " << 4*dst+2 << " and " << 4*dst+3 << endl;
+#endif
+    FLT32 buffer[32*16];
+    PIN_SafeCopy(&buffer, addr, 32 * 16 * sizeof(FLT32));
+    for (int i = 0; i < 16; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst].data[i][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst].data[i][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+    for (int i = 16; i < 32; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst+1].data[i-16][j] = buffer[i * 16 + j];
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst+1].data[i-16][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+    for (int i = 32; i < 48; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst+2].data[i-32][j] = 0;
+#ifdef VERBOSE
+        cout << "\t" << *(UINT32*)&TREGFILE[4*dst+2].data[i-32][j];
+#endif
+      }
+#ifdef VERBOSE
+      cout << endl;
+#endif
+    }
+    for (int i = 48; i < 64; i++) {
+      for (int j = 0; j < 16; j++) {
+        TREGFILE[4*dst+3].data[i-48][j] = 0;
 #ifdef VERBOSE
         cout << "\t" << *(UINT32*)&TREGFILE[4*dst+3].data[i-48][j];
 #endif
@@ -2282,6 +2347,43 @@ void instrument(INS ins)
         INS_InsertCall(ins,
                        IPOINT_BEFORE,
                        AFUNPTR(DoVLoad),
+                       IARG_UINT32,
+                       REG(INS_OperandReg(ins, 0)),
+		       IARG_MEMORYOP_EA, 0,
+		       IARG_UINT32,
+		       dst,
+                       IARG_END);
+        INS_InsertDirectJump(ins, IPOINT_AFTER, INS_NextAddress(ins) + INS_Size(ins));
+      } else if (IsV2TLOAD(ins)) {
+#ifdef VERBOSE
+        REG baseReg = INS_OperandMemoryBaseReg (ins, 1);
+        REG indexReg = INS_OperandMemoryIndexReg (ins, 1);
+        cout << "tileloadv2 " << REG_StringShort(r) << ", [" << REG_StringShort(baseReg) << "+" << REG_StringShort(indexReg) << "]" << endl;
+#endif
+        // Change the dst address of metadata load to mm
+        info->num_ld = 64;
+        info->mem_read_size = 128;
+        UINT32 tmp_mem_read_size = 128;
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)get_ld_ea_amx, 
+          IARG_MEMORYOP_EA, 0,
+          IARG_UINT32, tmp_mem_read_size,
+          IARG_UINT32, tmp_mem_read_size,
+  #ifndef PINLINUX
+          IARG_LEVEL_BASE::REG_VALUE, LEVEL_BASE::REG_EFLAGS,
+    #endif
+          IARG_THREAD_ID, IARG_END);
+
+        info->num_dest_regs = 4;
+        REG r = (REG)INS_OperandReg (ins, 0);
+        UINT32 ra = r - REG_TMM0;
+        assert(0 <= ra && ra < 2);
+        info->dst[0] = REG_TMM0 + ra*4;
+        info->dst[1] = REG_TMM0 + ra*4 + 1;
+        info->dst[2] = REG_TMM0 + ra*4 + 2;
+        info->dst[3] = REG_TMM0 + ra*4 + 3;
+        INS_InsertCall(ins,
+                       IPOINT_BEFORE,
+                       AFUNPTR(DoV2Load),
                        IARG_UINT32,
                        REG(INS_OperandReg(ins, 0)),
 		       IARG_MEMORYOP_EA, 0,
