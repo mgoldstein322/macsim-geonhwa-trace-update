@@ -146,7 +146,7 @@ public:
    * data cache constructor
    */
   dcu_c(int id, Unit_Type type, int level, memory_c* mem, int, dcu_c** next,
-        dcu_c** prev, macsim_c* simBase);
+        dcu_c** prev, macsim_c* simBase, bool perfect_cache);
 
   /**
    * data cache destructor
@@ -164,7 +164,7 @@ public:
    * @param has_router decide the next destination (NoC or next cache)
    */
   void init(int next_id, int prev_id, bool done, bool coupled_up,
-            bool coupled_down, bool disable, bool has_router);
+            bool coupled_down, bool disable, bool has_router, bool perfect_cache);
 
   /**
    * Get the cache line address
@@ -320,6 +320,8 @@ private:
 
   // clock
   Counter m_cycle; /**< clock cycle */
+
+  bool m_perfect_cache;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////

@@ -137,7 +137,9 @@ void retire_c::run_a_cycle() {
   }
 
   // retire instructions : all micro-ops within an inst. need to be retired for an inst.
+  //FIX HERE
   for (int count = 0; count < m_knob_width; ++count) {
+  //for (int count = 0; count < 100; ++count) {
     uop_c* cur_uop;
     rob_c* rob;
 

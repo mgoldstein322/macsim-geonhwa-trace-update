@@ -86,6 +86,7 @@ typedef struct trace_info_cpu_s {
   bool m_is_fp; /**< fp operation */
   bool m_write_flg; /**< write flag */
   uint8_t m_num_ld; /**< number of load operations */
+  uint8_t m_num_st; /**< number of store operations */
   uint8_t m_size; /**< instruction size */
   uint64_t m_src_bitmask[3][16];
   // dynamic information

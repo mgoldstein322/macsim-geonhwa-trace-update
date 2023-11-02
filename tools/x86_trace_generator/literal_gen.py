@@ -18,12 +18,12 @@ def process_options():
 
 def get_opcode_literal(pinhome):
   xed_list = []
-  xed_category_file = pinhome + '/extras/xed2-intel64/include/xed-category-enum.h'
+  xed_category_file = pinhome + '/extras/xed-intel64/include/xed/xed-category-enum.h'
 
   file = open(xed_category_file, 'r')
   for line in file:
     if re.match('  XED_CATEGORY', line):
-      xed_list.append(line.lstrip(' ').rstrip('\n').rstrip(','))
+      xed_list.append(line.lstrip(' ').rstrip('\n').rstrip(',')[13:])
   file.close()
 
   print('string tr_opcode_names[%d] = {' % (len(xed_list) - 1 + 9))
@@ -42,7 +42,7 @@ def get_opcode_literal(pinhome):
 
 
 def get_reg_literal(pinhome):
-  xed_reg_file = pinhome + '/source/include/gen/reg_ia32.PH'
+  xed_reg_file = pinhome + '/source/include/pin/gen/reg_ia32.PH'
   file = open(xed_reg_file, 'r')
 
   ## #if #else is not closed
@@ -132,7 +132,7 @@ def main():
     exit(0)
 
   get_opcode_literal(args.pinhome)
-#  get_reg_literal(args.pinhome)
+  get_reg_literal(args.pinhome)
 
 
 #########################################################################################

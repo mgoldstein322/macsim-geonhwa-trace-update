@@ -255,7 +255,7 @@ int exec_c::get_latency(Uop_Type uop_type) {
               + *m_simBase->m_knobs->KNOB_AMX_FF_LATENCY
               + *m_simBase->m_knobs->KNOB_AMX_FS_LATENCY
               + *m_simBase->m_knobs->KNOB_AMX_DR_LATENCY;
-    latency = 1;
+    latency = 64;
     DEBUG_CORE(m_core_id,
              "UOP_AMX_COMPUTE_BF16 latency: %d\n",
              latency
@@ -542,6 +542,17 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
               uop->m_mem_start_cycle = m_cur_core_cycle;
             }
 
+            if(type == MEM_SWPREF_NTA){
+              DEBUG_CORE(m_core_id,
+                         "m_core_id:%d thread_id:%d uop_num:%llu inst_num:%llu "
+                         "child_uop_num:%llu m_pc:%llx latency: %d \n",
+                         m_core_id, uop->m_thread_id, uop->m_uop_num,
+                         uop->m_inst_num,
+                         uop->m_child_uops[next_set_bit]->m_uop_num,
+                         uop->m_pc,
+                         latency);
+            }
+
             // mark current uop as executed
             uop->m_pending_child_uops =
               CLEAR_BIT(uop->m_pending_child_uops, next_set_bit);
@@ -647,7 +658,8 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
     uop_latency = get_latency(uop_type);
     assert(!((uop_type == UOP_AMX_COMPUTE_BF16) && (uop->m_mem_type == MEM_LD)));
     if((uop->m_opcode == XED_CATEGORY_AMX_TILE) && (uop_type == UOP_AMX_COMPUTE_BF16)){
-      STAT_EVENT(TDPBF16_COUNT);
+      DEBUG_CORE(m_core_id,
+                  "XED_CATEGORY_AMX_TILE // UOP_AMX_COMPUTE_BF16 \n");
       int latency = 0;
       int port_open_latency = 0;
       latency = *m_simBase->m_knobs->KNOB_AMX_WL_LATENCY
@@ -712,25 +724,61 @@ bool exec_c::exec(int thread_id, int entry, uop_c* uop) {
           port_open_latency = *m_simBase->m_knobs->KNOB_AMX_FF_LATENCY;
         }
       }
-      
       //TODO FIX HERE
-      // if sparse 
+      // this never happens
       if(uop->m_num_srcs == 4){
         DEBUG_CORE(m_core_id,
-                  "UOP_AMX_SPARSE_COMPUTE detected\n");
-        latency = 8;
-        port_open_latency = 8;
-      }
-      // if sparse 
-      else if(uop->m_num_srcs == 3){
-        DEBUG_CORE(m_core_id,
-                  "UOP_AMX_DENSE_COMPUTE detected\n");
-        latency = 16+32+16;
-        port_open_latency = 16;
-      }
-      else{
+                  "SOMETHING IS WRONG FOR AMX MM\n");
         exit(-1);
       }
+      // if dense 
+      else if(uop->m_num_srcs == 3){
+        STAT_EVENT(TDPBF16_COUNT);
+        DEBUG_CORE(m_core_id,
+                  "UOP_AMX_DENSE_COMPUTE detected at %llx\n", uop->m_pc);
+        //SM
+        //latency = 16+32+16+32;
+        //port_open_latency = 32;
+        
+        //DM
+        latency = 16 * 4;
+        port_open_latency = 16;
+      }
+      // if sparse
+      else if(uop->m_num_srcs == 5){
+        STAT_EVENT(SPMMU_COUNT);
+        DEBUG_CORE(m_core_id,
+                  "UOP_AMX_SPARSE_COMPUTE detected\n");
+        //QM
+        //latency = 8+16+8+16;
+        //port_open_latency = 16;
+
+        //OM
+        //latency = 8*4; //8+16+8+16;
+        //port_open_latency = 8;        
+        latency = 16;//8 + 16 + 8 + 16; //8+16+8+16;
+        port_open_latency = 16; // 16;  
+
+        //ideal
+        //latency = 1; //8+16+8+16;
+        //port_open_latency = 1;  
+
+        //small version
+        //latency = 32*4; //8+16+8+16;
+        //port_open_latency = 32;  
+      }
+      else if(uop->m_num_srcs == 7){
+          STAT_EVENT(SPMMV_COUNT);
+      }
+
+      else{
+        cout << uop->m_num_srcs << endl;
+        assert(false);
+      }
+      
+      // TEMPORARY-- FIX HERE
+      latency = *m_simBase->m_knobs->KNOB_AMX_FF_LATENCY;
+      port_open_latency = *m_simBase->m_knobs->KNOB_AMX_FS_LATENCY;
 
       uop_latency = latency * (*m_simBase->m_knobs->KNOB_AMX_CYCLE_SCALE);
       m_tmul_done_cycle = m_cur_core_cycle + port_open_latency * (*m_simBase->m_knobs->KNOB_AMX_CYCLE_SCALE);

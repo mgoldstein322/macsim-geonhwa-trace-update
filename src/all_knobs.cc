@@ -18,6 +18,8 @@ all_knobs_c::all_knobs_c() {
 
 	KNOB_AMX_CYCLE_SCALE = new KnobTemplate< float > ("amx_cycle_scale", 4);
 
+	KNOB_PERFECT_L2 = new KnobTemplate< bool > ("perfect_l2", false);
+
 
 	// =========== ../def/bp.param.def ===========
 	KNOB_BP_HIST_LENGTH = new KnobTemplate< uns > ("bp_hist_length", 5);
@@ -605,6 +607,7 @@ all_knobs_c::~all_knobs_c() {
 	delete KNOB_AMX_DR_LATENCY;
 
 	delete KNOB_AMX_CYCLE_SCALE;
+	delete KNOB_PERFECT_L2;
 
 	delete KNOB_BP_HIST_LENGTH;
 	delete KNOB_PHT_CTR_BITS;
@@ -1154,6 +1157,9 @@ void all_knobs_c::registerKnobs(KnobsContainer *container) {
 	container->insertKnob( KNOB_AMX_WL_BP );
 	container->insertKnob( KNOB_AMX_WL_S );
 	container->insertKnob( KNOB_AMX_CYCLE_SCALE);
+
+	container->insertKnob( KNOB_PERFECT_L2);
+
 	// =========== ../def/bp.param.def ===========
 	container->insertKnob( KNOB_BP_HIST_LENGTH );
 	container->insertKnob( KNOB_PHT_CTR_BITS );

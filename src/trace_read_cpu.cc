@@ -525,6 +525,10 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
       if (pi->m_opcode == XED_CATEGORY_DATAXFER) {
         write_dest_reg = 1;
       }
+      
+      if (pi->m_opcode == XED_CATEGORY_AMX_TILE && (pi->m_num_ld)) {
+        write_dest_reg = 1;
+      }
 
       if (trace_uop[0]->m_mem_type == MEM_LD) {
         inst_has_ld_uop = true;
@@ -925,7 +929,7 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
   
   if (pi->m_opcode == XED_CATEGORY_AMX_TILE) {
     bool is_amx_mem = (pi->m_opcode == XED_CATEGORY_AMX_TILE) &&
-                      (pi->m_has_st || (pi->m_num_ld == 16));
+                      (pi->m_has_st || (pi->m_num_ld > 0));
     dyn_uop_counter = 1;
     if(is_amx_mem){
       int rep_counter = 1;
@@ -933,31 +937,43 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
       int tileload_type = -1;
       if(pi->m_has_st){
         trace_uop[0]->m_mem_type = MEM_ST;
+        // TODO: Add storeu and storet
       }
       else{
         trace_uop[0]->m_mem_type = MEM_LD;
         trace_uop[0]->m_mem_size = pi->m_mem_read_size;
-
-        if(pi->m_mem_read_size == 64){
+        if(pi->m_num_ld == 64){
+          STAT_EVENT(TILELOADV_COUNT);
           DEBUG_CORE(
           core_id,
-          "AMX_TILE_DENSE_LOAD"
+          "AMX_TILE_DENSE_LOADV"
           );
           tileload_type = 0;
         }
-        else if(pi->m_mem_read_size == 32){
+        else if(pi->m_num_ld == 32){
+          STAT_EVENT(TILELOADU_COUNT);
           DEBUG_CORE(
           core_id,
-          "AMX_TILE_SPARSE_LOAD"
+          "AMX_TILE_DENSE_LOADU"
           );
-          tileload_type = 1;
+          tileload_type = 10;
         }
-        else if (pi->m_mem_read_size == 4){
+        else if(pi->m_num_ld == 16){
+          STAT_EVENT(TILELOADT_COUNT);
           DEBUG_CORE(
           core_id,
-          "AMX_TILE_META_LOAD"
+          "AMX_TILE_DENSE_LOADT"
           );
           tileload_type = 2;
+        }
+        else if (pi->m_num_ld == 1){
+          // TODO: Add metadata count
+          STAT_EVENT(METALOAD_COUNT);
+          DEBUG_CORE(
+          core_id,
+          "AMX_TILE_META_LOAD\n"
+          );
+          tileload_type = 3;
         }
         else{
           DEBUG_CORE(
@@ -966,7 +982,7 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
           core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
           static_cast<int>(pi->m_opcode),
           pi->m_mem_read_size, dyn_uop_counter);
-          exit(-1);
+          assert(false);
         }
       }
       // generate multiple uops with different memory addresses
@@ -974,8 +990,9 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
 
       //int rep_mem_size = (int)pi->m_mem_read_size;
       
-      int num_tile_uops = *KNOB(KNOB_NUM_TILE_UOPS);
-      
+      //int num_tile_uops = *KNOB(KNOB_NUM_TILE_UOPS);
+      int num_tile_uops = pi->m_num_ld;
+
       key_addr = ((pi->m_instruction_addr << 5));
       info = htable->hash_table_access_create(key_addr, &new_entry);
       assert(!new_entry);
@@ -988,7 +1005,6 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
       }
 
       for (int jj = dyn_uop_counter; jj < num_tile_uops; jj++) {
-
         if(tileload_type == -1){
           trace_uop[jj]->m_mem_type = MEM_ST;
         }
@@ -1098,14 +1114,24 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
   ASSERT(dyn_uop_counter > 0);
   first_info->m_trace_info.m_num_uop = dyn_uop_counter;
   //first_info->m_trace_info.m_num_uop = num_uop;
-  bool is_amx_mem = pi->m_has_st || (pi->m_num_ld == 16);
+  // TODO UPDATE FOR 1:4
+  bool is_amx_mem = pi->m_has_st || (pi->m_num_ld == 1) || 
+    (pi->m_num_ld == 16) || (pi->m_num_ld == 32) || (pi->m_num_ld == 64);
 
   if((pi->m_opcode == XED_CATEGORY_AMX_TILE) && is_amx_mem){
-    
     //first_info->m_trace_info.m_num_uop = trace_uop[0]->m_rep_uop_num;
     if(pi->m_has_st){
       info->m_table_info->m_mem_type = MEM_ST;
-      STAT_EVENT(TILESTORE_COUNT);
+      if(pi->m_num_st == 16){
+        STAT_EVENT(TILESTORET_COUNT);
+      }
+      else if (pi->m_num_st == 32){
+        STAT_EVENT(TILESTOREU_COUNT);
+      }
+      else{
+        cout << "ERROR FOR TILESTORE" << endl;
+        exit(-1);
+      }
       DEBUG_CORE(
             core_id,
             "AMX_TILE_MEM STORE set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_write_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
@@ -1114,7 +1140,6 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
             pi->m_mem_write_size, dyn_uop_counter, first_info->m_trace_info.m_num_uop);
     }
     else{
-      STAT_EVENT(TILELOAD_COUNT);
       info->m_table_info->m_mem_type = MEM_LD;
       DEBUG_CORE(
             core_id,
@@ -1130,7 +1155,6 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
             core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
             static_cast<int>(pi->m_opcode),
             first_info->m_trace_info.m_num_uop, dyn_uop_counter, first_info->m_trace_info.m_num_uop);
-    
       assert(first_info->m_trace_info.m_num_uop == 16);
     }
     for(ii = 0; ii < first_info->m_trace_info.m_num_uop; ii++){
@@ -1172,7 +1196,7 @@ inst_info_s *cpu_decoder_c::convert_pinuop_to_t_uop(void *trace_info,
       trace_uop[0]->m_op_type = UOP_AMX_COMPUTE_BF16;
       DEBUG_CORE(
               core_id,
-              "AMX_TILE_COMPUTE set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
+              "AMX_TILE_GEMM set core_id:%d thread_id:%d pc:0x%llx opcode:%d mem_read_size:%d dyn_uop_counter:%d m_num_uop:%d\n",
               core_id, sim_thread_id, (Addr)(pi->m_instruction_addr),
               static_cast<int>(pi->m_opcode),
               pi->m_mem_read_size, dyn_uop_counter, first_info->m_trace_info.m_num_uop);

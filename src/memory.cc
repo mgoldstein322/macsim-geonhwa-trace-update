@@ -273,7 +273,7 @@ bool queue_c::full() {
 
 // data cache constructor.
 dcu_c::dcu_c(int id, Unit_Type type, int level, memory_c* mem, int noc_id,
-             dcu_c** next, dcu_c** prev, macsim_c* simBase) {
+             dcu_c** next, dcu_c** prev, macsim_c* simBase, bool perfect_cache = false) {
   m_simBase = simBase;
 
   CREATE_CACHE_CONFIGURATION();
@@ -298,6 +298,8 @@ dcu_c::dcu_c(int id, Unit_Type type, int level, memory_c* mem, int noc_id,
 
   m_cache = NULL;
   m_port = NULL;
+
+  m_perfect_cache = perfect_cache;
 }
 
 // dcu_c destructor.
@@ -316,7 +318,7 @@ dcu_c::~dcu_c() {
 
 // initialize data cache.
 void dcu_c::init(int next_id, int prev_id, bool done, bool coupled_up,
-                 bool coupled_down, bool disable, bool has_router) {
+                 bool coupled_down, bool disable, bool has_router, bool perfect_cache = false) {
   m_next_id = next_id;
   m_prev_id = prev_id;
   m_coupled_up = coupled_up;
@@ -324,7 +326,8 @@ void dcu_c::init(int next_id, int prev_id, bool done, bool coupled_up,
   m_done = done;
   m_disable = disable;
   m_has_router = has_router;
-
+  REPORT("TEST INIT: L2 Perfect Cache: %d\n", perfect_cache);
+  m_perfect_cache = perfect_cache;
   if (!m_disable) {
     if (m_level == MEM_LLC) {
       string llc_policy = *KNOB(KNOB_LLC_TYPE);
@@ -450,7 +453,7 @@ int dcu_c::access(uop_c* uop) {
   // DCACHE access
   // -------------------------------------
   bool cache_hit = false;
-  if (*m_simBase->m_knobs->KNOB_PERFECT_DCACHE) {
+  if (*m_simBase->m_knobs->KNOB_PERFECT_DCACHE || m_perfect_cache) {
     cache_hit = true;
   } else if (m_disable == true) {
     cache_hit = false;
@@ -747,7 +750,7 @@ void dcu_c::process_in_queue() {
         req->m_addr, &line_addr, req->m_type == MRT_WB ? false : true,
         req->m_appl_id);
       cache_hit = (line) ? true : false;
-
+      cache_hit = m_perfect_cache;
       if (m_level != MEM_LLC) {
         POWER_CORE_EVENT(req->m_core_id, POWER_DCACHE_R_TAG + (m_level - 1));
       } else {
@@ -758,6 +761,7 @@ void dcu_c::process_in_queue() {
     // -------------------------------------
     // Cache hit
     // -------------------------------------
+    
     if (cache_hit) {
       if (m_level != MEM_LLC) {
         POWER_CORE_EVENT(req->m_core_id, POWER_DCACHE_R + (m_level - 1));
@@ -2308,9 +2312,12 @@ llc_coupled_network_c::~llc_coupled_network_c() {
 llc_decoupled_network_c::llc_decoupled_network_c(macsim_c* simBase)
   : memory_c(simBase) {
   // NEXT_ID, PREV_ID, DONE, COUPLE_UP, COUPLE_DOWN, DISABLE, HAS_ROUTER
+  cout << "L2 Perfect Cache: " << *m_simBase->m_knobs->KNOB_PERFECT_L2 << endl;
+  REPORT("L2 Perfect Cache: %d\n", KNOB(KNOB_PERFECT_L2)->getValue());
+  //KNOB(KNOB_MEMORY_TYPE)->getValue().c_str());
   for (int ii = 0; ii < m_num_core; ++ii) {
     m_l1_cache[ii]->init(ii, -1, false, false, true, false, false);
-    m_l2_cache[ii]->init(-1, ii, true, true, false, false, true);
+    m_l2_cache[ii]->init(-1, ii, true, true, false, false, true, *m_simBase->m_knobs->KNOB_PERFECT_L2);
   }
 
   for (int ii = 0; ii < m_num_l3; ++ii)

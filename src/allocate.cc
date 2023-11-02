@@ -161,6 +161,15 @@ void allocate_c::run_a_cycle(void) {
     pqueue_c<int> *alloc_q = m_alloc_q[q_type];
 
     // check rob and other physical resources
+    if(alloc_q->space() < 1){
+      DEBUG_CORE(m_core_id,
+                 "not enough alloc_q space for q_type: %d rob_space:%d num_sb:%d "
+                 "num_lb:%d alloc_q:%d int_reg:%d fp_reg:%d \n",
+                 q_type,
+                 m_rob->space(), m_resource->get_num_sb(),
+                 m_resource->get_num_lb(), alloc_q->space(),
+                 m_resource->get_num_int_regs(), m_resource->get_num_fp_regs());
+    }
     if (m_rob->space() < req_rob || m_resource->get_num_sb() < req_sb ||
         m_resource->get_num_lb() < req_lb || alloc_q->space() < 1 ||
         m_resource->get_num_int_regs() < req_int_reg ||
